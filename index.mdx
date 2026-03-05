@@ -53,10 +53,13 @@ mode: "custom"
     
     <Steps>
       <Step title="Install Splat">
-        Install Splat globally using pip:
+        Clone and install from source:
         
         ```bash
-        pip install splat
+        git clone https://github.com/ehcaw/splat.git
+        cd splat
+        pip install -r requirements.txt
+        pip install -e .
         ```
       </Step>
       
