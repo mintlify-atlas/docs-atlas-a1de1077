@@ -1,0 +1,72 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "Splat",
+  "projectDescription": "AI-powered debugging tool that analyzes compile and runtime errors with contextual code analysis using Groq.",
+  "theme": "aspen",
+  "primaryColor": "#f43c04",
+  "lightColor": "#fc9c7a",
+  "darkColor": "#f3f0e9",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Usage",
+            "pages": [
+              "usage/commands",
+              "usage/flags",
+              "usage/examples"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/how-it-works",
+              "concepts/error-analysis",
+              "concepts/context-gathering"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/configuration",
+              "advanced/troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "CLI Reference",
+            "pages": [
+              "reference/cli",
+              "reference/api"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "AI-optimized debugging with Groq's fast inference model",
+    "Simple out-of-the-box usage without configuration",
+    "Git-aware context gathering respecting .gitignore",
+    "Relational file dependency analysis with -r flag",
+    "Structured JSON output with actionable fix suggestions"
+  ],
+  "publicApiSurface": [
+    "splat squash <entrypoint>",
+    "splat squash -r <entrypoint>"
+  ]
+}
