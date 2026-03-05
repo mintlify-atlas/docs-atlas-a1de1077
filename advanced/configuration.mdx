@@ -1,0 +1,251 @@
+---
+title: 'Configuration'
+description: 'Configure Splat with environment variables and custom settings'
+icon: 'gear'
+---
+
+## Overview
+
+Splat is designed to work out-of-the-box with minimal configuration. However, to unlock its full potential, you'll need to configure API keys and optionally customize behavior through environment variables and configuration files.
+
+## Environment Setup
+
+### Required Environment Variables
+
+Splat requires API credentials to communicate with the Groq inference service for AI-powered debugging.
+
+<Warning>
+  Without proper API configuration, Splat will fail to generate debug responses. Ensure you have a valid Groq API key before using Splat.
+</Warning>
+
+#### API Key Configuration
+
+Splat uses the `API` environment variable to authenticate with Groq's LLM service:
+
+```bash
+export API="your_groq_api_key_here"
+```
+
+<Note>
+  The environment variable is named `API`, not `GROQ_API_KEY`. This is referenced in `process/process.py:11`.
+</Note>
+
+### Setting Up Your Environment
+
+#### Option 1: .env File (Recommended)
+
+Create a `.env` file in your project root:
+
+```bash
+# .env
+API=gsk_your_groq_api_key_here
+```
+
+Splat automatically loads environment variables from `.env` files using python-dotenv.
+
+<Tip>
+  Add `.env` to your `.gitignore` to prevent accidentally committing API keys to version control.
+</Tip>
+
+#### Option 2: Shell Configuration
+
+Add the API key to your shell configuration file:
+
+**For Bash (~/.bashrc or ~/.bash_profile):**
+```bash
+echo 'export API="your_groq_api_key_here"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**For Zsh (~/.zshrc):**
+```bash
+echo 'export API="your_groq_api_key_here"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+#### Option 3: Session-Specific Export
+
+For temporary use in a single terminal session:
+
+```bash
+export API="your_groq_api_key_here"
+```
+
+### Getting a Groq API Key
+
+1. Visit [groq.com](https://groq.com/)
+2. Sign up for an account or log in
+3. Navigate to API Keys section
+4. Generate a new API key
+5. Copy the key and add it to your environment
+
+<Note>
+  Groq provides extremely fast inference with the `llama3-70b-8192` model, which Splat uses by default for instant debug responses.
+</Note>
+
+## Configuration File
+
+### config.toml
+
+Splat supports a `config.toml` file for future configuration options. Currently, the configuration file structure is minimal:
+
+```toml
+# config.toml - Future configuration options will be added here
+```
+
+The configuration file is located at the root of the Splat installation. While it's currently empty, future versions may support:
+
+<Accordion title="Planned Configuration Options">
+  - **Model Selection**: Choose alternative Groq models
+  - **Context Depth**: Control how many related files to analyze with `-r` flag
+  - **Output Formatting**: Customize terminal output styles
+  - **Git Integration**: Configure .gitignore parsing behavior
+  - **Performance Tuning**: Adjust timeout and retry settings
+</Accordion>
+
+## Project-Specific Configuration
+
+### Git Integration
+
+Splat automatically respects your `.gitignore` files to avoid exposing sensitive information:
+
+```bash
+# .gitignore
+.env
+*.key
+credentials.json
+secrets/
+```
+
+<Tip>
+  Splat is **Git Aware** - it won't send ignored files to the AI service, protecting your sensitive data and API keys.
+</Tip>
+
+### Directory Structure
+
+Splat works best when run from the root directory of your project:
+
+```
+project-root/
+├── .env              # API keys
+├── .gitignore        # Ignored files
+├── main.py           # Your entrypoint
+├── module1.py
+└── module2.py
+```
+
+<Warning>
+  Splat currently does not handle sub-module entrypoints well when they don't originate from the root directory. Always run Splat from your project root.
+</Warning>
+
+## Dependencies
+
+Splat requires the following Python packages (from `requirements.txt`):
+
+```txt
+click               # CLI framework
+repopack           # Repository context gathering
+setuptools         # Package management
+virtualenv         # Virtual environment support
+groq               # Groq API client
+fastapi            # API framework (for future features)
+uvicorn            # ASGI server
+python-dotenv      # Environment variable loading
+prompt_toolkit     # Interactive terminal UI
+requests           # HTTP requests
+black              # Code formatting
+pydantic_ai        # AI model validation
+pydantic           # Data validation
+zmq                # Zero message queue
+```
+
+Install dependencies with:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Installation
+
+Splat is installed as a global CLI tool using setuptools:
+
+```bash
+# From the source directory
+pip install -e .
+```
+
+This creates the `splat` command globally available in your terminal.
+
+## Verification
+
+Verify your configuration is correct:
+
+```bash
+# Check if API key is set
+echo $API
+
+# Test Splat installation
+splat --help
+
+# Run a simple test
+splat squash "python3 test.py"
+```
+
+<Accordion title="Troubleshooting Configuration Issues">
+  If Splat fails to start:
+  
+  1. **Check API key**: Ensure `$API` environment variable is set
+  2. **Verify installation**: Run `pip show splat` to confirm installation
+  3. **Check permissions**: Ensure the CLI has execute permissions
+  4. **Review logs**: Check for error messages in terminal output
+  5. **Python version**: Splat requires Python 3.7+
+</Accordion>
+
+## Advanced Configuration
+
+### Model Configuration
+
+Splat uses the `llama3-70b-8192` model by default (configured in `process/process.py:36`). This model provides:
+
+- Fast inference times (powered by Groq)
+- 8,192 token context window
+- High accuracy for Python error analysis
+- JSON-formatted structured responses
+
+### Context Gathering Modes
+
+Splat supports different levels of context gathering:
+
+**Basic Mode (default):**
+```bash
+splat squash "python3 main.py"
+```
+Analyzes only files mentioned in the error traceback.
+
+**Relational Mode (-r flag):**
+```bash
+splat squash -r "python3 main.py"
+```
+Analyzes error files plus all Nth-degree related imports for maximum context.
+
+<Tip>
+  Use the `-r` flag for complex errors involving multiple interconnected modules. This provides the AI with broader context for more accurate debugging.
+</Tip>
+
+## Security Best Practices
+
+<Warning>
+  Never commit API keys to version control. Always use environment variables or .env files that are gitignored.
+</Warning>
+
+1. **Use .env files**: Keep API keys out of source code
+2. **Leverage .gitignore**: Splat respects gitignore automatically
+3. **Rotate keys regularly**: Update API keys periodically
+4. **Limit key permissions**: Use API keys with minimal required permissions
+5. **Monitor usage**: Check Groq dashboard for unexpected API usage
+
+## Next Steps
+
+- Learn about [troubleshooting common issues](/advanced/troubleshooting)
+- Explore [command-line usage](/quickstart)
+- Understand [how Splat works](/concepts/how-it-works)

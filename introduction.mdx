@@ -1,0 +1,148 @@
+---
+title: "Introduction to Splat"
+description: "AI-powered debugging tool that combines errors with deep context analysis for instant, accurate fixes"
+---
+
+```
+ /\_/\
+( o.o )
+ > ^ <
+```
+
+## What is Splat?
+
+Splat is an AI-powered debugging CLI tool that combines your compile and runtime errors with contextual code analysis to deliver highly educated debug responses. Built at CalHacks 11.0, Splat is designed to help you quickly fix, understand, and prevent errors in your codebase.
+
+When you encounter an error, Splat doesn't just look at the error message—it analyzes your entire error stack trace, gathers relevant file context, and uses Groq's lightning-fast inference to provide actionable solutions in seconds.
+
+## Why Splat?
+
+Traditional debugging workflows are time-consuming:
+
+1. Read the error message
+2. Navigate to the problematic file
+3. Search for related code
+4. Context-switch to documentation or Stack Overflow
+5. Try a fix, test, repeat
+
+Splat streamlines this entire process into a single command, providing:
+
+- **Precise error location**: File path and line number
+- **Error explanation**: Clear description of what went wrong
+- **Code solution**: Actual code snippet to fix the issue
+- **Deep context**: Related files and dependencies when needed
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="AI-Optimized" icon="bolt">
+    Uses Groq's extremely fast inference model to deliver instant debug responses with high accuracy. Powered by `llama3-70b-8192` for production-grade analysis.
+  </Card>
+  
+  <Card title="Zero Config" icon="magic">
+    Works out-of-the-box in any project without configuration. Just point it at your entrypoint and go.
+  </Card>
+  
+  <Card title="Git-Aware" icon="git-alt">
+    Respects your `.gitignore` files to ensure sensitive information never leaves your machine.
+  </Card>
+  
+  <Card title="Deep Context Analysis" icon="diagram-project">
+    Use the `-r` flag to grab all files related to your error stack to Nth degree connections, providing the most contextual and accurate debug response.
+  </Card>
+</CardGroup>
+
+## How It Works
+
+Splat's debugging pipeline consists of three main stages:
+
+<Steps>
+  <Step title="Error Capture">
+    Splat runs your entrypoint command in a contained environment and captures the full error traceback when your code fails.
+    
+    ```python
+    # From relational.py:14-16
+    try:
+      subprocess.run(entrypoint, capture_output=True, check=True, text=True)
+    except subprocess.CalledProcessError as error:
+      traceback: str = error.stderr if error.stderr else str(error)
+    ```
+  </Step>
+  
+  <Step title="Context Collection">
+    Parses the error stack to identify all involved files. With the `-r` flag, it builds a dependency graph to find all related files through imports and connections.
+    
+    ```python
+    # From relational.py:25-28
+    if flag == '-r':
+      graph = build_adjacency_list(collected_traceback_files, project_root)
+      all_related_files = get_nth_related_files(collected_traceback_files, graph)
+      return traceback, error_information, run_mock_repopack(list(all_related_files))
+    ```
+  </Step>
+  
+  <Step title="AI Analysis">
+    Sends the error traceback and file context to Groq's LLM, which analyzes the error and returns structured JSON with the error location, explanation, and fix.
+    
+    ```python
+    # From process/process.py:13-38
+    chat_completion = client.chat.completions.create(
+      messages=[...],
+      model="llama3-70b-8192",
+      response_format={"type": "json_object"}
+    )
+    ```
+  </Step>
+</Steps>
+
+## Response Structure
+
+Splat returns a structured JSON response containing:
+
+```json
+{
+  "where": {
+    "repository_path": "/absolute/path/to/repo",
+    "file_name": "foo.py",
+    "line_number": "42"
+  },
+  "what": {
+    "error_type": "SyntaxError",
+    "description": "Opening parenthesis was never closed"
+  },
+  "how": {
+    "error_origination": "42",
+    "suggested_code_solution": "print(hello)\n"
+  }
+}
+```
+
+<Note>
+The AI analyzes your entire error context to provide not just what went wrong, but exactly how to fix it with a ready-to-use code solution.
+</Note>
+
+## When to Use Splat
+
+Splat is perfect for:
+
+- **Quick debugging sessions**: Fix errors in seconds instead of minutes
+- **Understanding unfamiliar errors**: Get clear explanations of complex error messages  
+- **Learning**: See how experienced developers would fix similar issues
+- **Preventing future errors**: Understand root causes to avoid similar mistakes
+
+<Warning>
+Splat currently has limitations:
+- Does not conform to formatting configurations when inserting code
+- May not work well with sub-module entrypoints that don't originate from the root directory
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Splat on your system
+  </Card>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Debug your first error in 60 seconds
+  </Card>
+</CardGroup>

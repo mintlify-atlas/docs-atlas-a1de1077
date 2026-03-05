@@ -1,0 +1,493 @@
+---
+title: 'Error Analysis with AI'
+description: 'How Splat analyzes errors using Groq LLM and generates actionable solutions'
+---
+
+## Overview
+
+Splat's error analysis engine uses **Groq's LLM API** with the `llama3-70b-8192` model to intelligently understand Python errors and suggest fixes. Unlike simple pattern matching or rule-based systems, Splat's AI-powered approach can reason about complex error scenarios and provide context-aware solutions.
+
+<Info>
+Splat enforces **structured JSON output** from the LLM, ensuring reliable parsing and consistent response format.
+</Info>
+
+## The AI Processing Pipeline
+
+### Input Data Structure
+
+The `process()` function in `process/process.py:10` receives three critical pieces of information:
+
+```python
+def process(
+  traceback_message: str,      # Full Python traceback from stderr
+  original_error_information: str,  # Error summary/command output
+  context: str                 # Packaged source code from relevant files
+) -> object:
+```
+
+<Steps>
+  <Step title="Traceback Message">
+    The complete stderr output from your failing Python program:
+    
+    ```
+    Traceback (most recent call last):
+      File "/path/to/foo.py", line 42, in <module>
+        result = calculate_total(items)
+      File "/path/to/utils.py", line 15, in calculate_total
+        return sum(item['price'] for item in items)
+    KeyError: 'price'
+    ```
+    
+    This provides the LLM with the exact sequence of function calls and the error location.
+  </Step>
+
+  <Step title="Original Error Information">
+    The raw error message from the subprocess:
+    
+    ```python
+    # From relational.py:20
+    error_information: str = str(error)
+    ```
+    
+    This typically contains the command that failed and return code information.
+  </Step>
+
+  <Step title="Code Context">
+    All relevant source code packaged by `run_mock_repopack()`:
+    
+    ```
+    ==================================================
+    File: /path/to/foo.py
+    Content:
+    import utils
+    
+    items = [{'name': 'apple'}, {'name': 'banana'}]
+    result = utils.calculate_total(items)
+    ==================================================
+    File: /path/to/utils.py
+    Content:
+    def calculate_total(items):
+      return sum(item['price'] for item in items)
+    ==================================================
+    ```
+    
+    This gives the LLM full visibility into the code that caused the error, plus related files when using the `-r` flag.
+  </Step>
+</Steps>
+
+## Prompt Engineering Strategy
+
+Splat uses a carefully crafted system prompt to guide the LLM's analysis. The prompt is split across multiple messages for clarity:
+
+### Role Definition
+
+```python
+# From process/process.py:17
+{
+  "role": "system",
+  "content": "You are an expert software debugging assistant specializing in Python error analysis. Your task is to analyze error tracebacks and provide structured, actionable advice. Follow these steps precisely:"
+}
+```
+
+This establishes the LLM's expertise domain and sets expectations for structured output.
+
+### Analysis Steps
+
+```python
+# From process/process.py:21
+{
+  "role": "system",
+  "content": """1. Analyze the provided error traceback and original error message.
+2. Identify the source of the error within the repository structure.
+3. Explain the error concisely in natural language.
+4. Provide specific, actionable suggestions for resolving the error.
+5. Format your response as a JSON object with the exact structure specified below."""
+}
+```
+
+This 5-step process ensures the LLM follows a methodical approach:
+1. **Analyze** - Understand the error
+2. **Identify** - Locate the source
+3. **Explain** - Describe in plain language
+4. **Suggest** - Provide actionable fix
+5. **Format** - Structure as JSON
+
+### JSON Schema Enforcement
+
+```python
+# From process/process.py:25
+{
+  "role": "system",
+  "content": """Your response MUST be a valid JSON object with this exact structure:
+{
+  "where": {
+    "repository_path": "<absolute path to repository>",
+    "file_name": "<name of file containing error>",
+    "line_number": "<line number where error occurred>"
+  },
+  "what": {
+    "error_type": "<specific Python error type>",
+    "description": "<concise explanation of error>"
+  },
+  "how": {
+    "error_origination": "<line number where error originated>",
+    "suggested_code_solution": "<code snippet to fix the error>"
+  }
+}"""
+}
+```
+
+The response structure has three main sections:
+
+<Accordion title="where - Error Location">
+  Identifies the physical location of the error:
+  
+  - **`repository_path`** - Absolute path to the project root
+  - **`file_name`** - Specific file containing the error
+  - **`line_number`** - Exact line where the error occurred
+  
+  Example:
+  ```json
+  "where": {
+    "repository_path": "/Users/dev/project",
+    "file_name": "utils.py",
+    "line_number": "15"
+  }
+  ```
+</Accordion>
+
+<Accordion title="what - Error Description">
+  Explains what went wrong:
+  
+  - **`error_type`** - The specific Python exception (e.g., KeyError, AttributeError, SyntaxError)
+  - **`description`** - A concise, human-readable explanation of why the error occurred
+  
+  Example:
+  ```json
+  "what": {
+    "error_type": "KeyError",
+    "description": "The dictionary items are missing the 'price' key. Each item only has 'name'."
+  }
+  ```
+</Accordion>
+
+<Accordion title="how - Solution Strategy">
+  Provides the fix:
+  
+  - **`error_origination`** - Where the problem started (may differ from where it manifested)
+  - **`suggested_code_solution`** - Exact code to replace the problematic line
+  
+  Example:
+  ```json
+  "how": {
+    "error_origination": "15",
+    "suggested_code_solution": "return sum(item.get('price', 0) for item in items)"
+  }
+  ```
+  
+  Note: The suggested code is a **complete replacement** for the line, not a diff or patch.
+</Accordion>
+
+### Constraints and Guidelines
+
+```python
+# From process/process.py:29
+{
+  "role": "system",
+  "content": """Constraints:
+- Provide ONLY the JSON object as your response. Do not include any other text.
+- Ensure all JSON keys are exactly as specified.
+- The 'suggested_code_solution' should be a valid Python code snippet without explanation.
+- If multiple errors exist, focus on the most critical one that likely caused the others.
+- Do not use placeholders in your response. Provide specific, contextual information based on the given error. 
+- Only fix the line from the line number given that is causing the error."""
+}
+```
+
+These constraints are critical for reliability:
+
+<Note>
+**Key Constraints:**
+- **JSON only** - No markdown, code blocks, or explanatory text
+- **Exact keys** - Must match the schema precisely
+- **Valid code** - The suggested solution must be syntactically correct Python
+- **Single focus** - Address the root cause, not cascading errors
+- **No placeholders** - Concrete solutions based on actual context
+- **Line-specific** - Fix only the identified problematic line
+</Note>
+
+### User Message
+
+Finally, the actual error data is sent:
+
+```python
+# From process/process.py:32-34
+{
+  "role": "user",
+  "content": f"Context: {context}\n\nTraceback message: {traceback_message}\n\nOriginal error message: {original_error_information}"
+}
+```
+
+This combines all three input pieces into a single user message.
+
+## API Configuration
+
+### Model Selection
+
+```python
+# From process/process.py:36
+model="llama3-70b-8192"
+```
+
+Splat uses **Llama 3 70B** via Groq because:
+- **Speed** - Groq's infrastructure provides extremely fast inference
+- **Reasoning** - 70B parameter model has strong code understanding
+- **Context window** - 8192 tokens is sufficient for most debugging scenarios
+- **JSON support** - Native structured output capability
+
+### Response Format
+
+```python
+# From process/process.py:37
+response_format={"type": "json_object"}
+```
+
+This parameter forces the LLM to output valid JSON, eliminating parsing errors.
+
+## Response Processing
+
+The raw response is returned as a string:
+
+```python
+# From process/process.py:39
+return chat_completion.choices[0].message.content
+```
+
+This JSON string is later parsed in `terminalout/terminal.py:13`:
+
+```python
+def terminalstep1(json_object):
+  data = json.loads(json_object)
+  # Extract fields for display
+  line_number = data['where']['line_number']
+  file_name = data['where']['file_name']
+  error_type = data['what']['error_type']
+  description = data['what']['description']
+```
+
+## Example Analysis Flow
+
+Let's trace a complete example:
+
+<Steps>
+  <Step title="User runs buggy code">
+    ```bash
+    splat -r "python3 app.py"
+    ```
+  </Step>
+
+  <Step title="Error captured">
+    ```python
+    # Traceback
+    Traceback (most recent call last):
+      File "app.py", line 5, in <module>
+        print(foo.bar())
+    AttributeError: module 'foo' has no attribute 'bar'
+    ```
+  </Step>
+
+  <Step title="Context gathered">
+    With `-r` flag, Splat collects:
+    - `app.py` (error location)
+    - `foo.py` (imported module)
+    - Any files imported by `foo.py`
+  </Step>
+
+  <Step title="LLM analyzes">
+    The LLM receives:
+    - **Traceback** - Shows AttributeError on line 5
+    - **Context** - Both app.py and foo.py contents
+    - **Task** - Find and fix the root cause
+    
+    It determines:
+    - Function is named `baz`, not `bar` in foo.py
+    - This is a simple typo
+    - The fix is to change `bar()` to `baz()`
+  </Step>
+
+  <Step title="Structured response generated">
+    ```json
+    {
+      "where": {
+        "repository_path": "/Users/dev/project",
+        "file_name": "app.py",
+        "line_number": "5"
+      },
+      "what": {
+        "error_type": "AttributeError",
+        "description": "Module 'foo' does not have an attribute 'bar'. The correct function name is 'baz'."
+      },
+      "how": {
+        "error_origination": "5",
+        "suggested_code_solution": "print(foo.baz())"
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="User sees results">
+    ```
+    🔎 Details about error
+    ✅ We found the first instance of the error at line 5.
+    ✅ The owner of the error: app.py.
+    ✅ The type of the error: AttributeError.
+    ✅ Isolated error message: Module 'foo' does not have an attribute 'bar'. The correct function name is 'baz'.
+    
+    See suggested change? ... Yes / No
+    ```
+  </Step>
+</Steps>
+
+## Advanced Capabilities
+
+### Multi-file Context Awareness
+
+When using the `-r` flag, Splat provides the LLM with all related files. This enables:
+
+**Cross-file debugging:**
+```python
+# app.py
+from config import DATABASE_URL
+connect(DATABASE_URL)
+
+# config.py
+DATABASE_ULR = "postgresql://..."  # Typo!
+```
+
+The LLM can identify that the error in `app.py` (undefined `DATABASE_URL`) is actually caused by a typo in `config.py`.
+
+**Dependency understanding:**
+```python
+# main.py
+from utils import process_data
+result = process_data({'items': [1, 2, 3]})
+
+# utils.py
+def process_data(data):
+  return sum(data['values'])  # Wrong key!
+```
+
+With both files in context, the LLM understands that `process_data` expects `'values'` but `main.py` provides `'items'`.
+
+### Error Root Cause Analysis
+
+The prompt specifically instructs the LLM to focus on **the most critical error** (see `process.py:29`). This means:
+
+- Cascading errors are ignored in favor of the root cause
+- Secondary issues are not addressed unless they're the primary problem
+- The fix targets the original point of failure
+
+### Context-Aware Solutions
+
+The suggested code is not generic - it's tailored to your specific situation:
+
+```python
+# Generic solution (bad)
+"suggested_code_solution": "result = function(arg)"
+
+# Context-aware solution (good)
+"suggested_code_solution": "result = calculate_total(items, tax_rate=0.08)"
+```
+
+The LLM uses variable names, function signatures, and coding patterns from your codebase.
+
+## Integration with File Writer Agent
+
+Once the LLM generates a solution, it can be automatically applied:
+
+```python
+# From agents/file_writer_agent.py:41-55
+@file_writer.on_message(model=ErrorCorrectionRequest)
+async def apply_error_correction(ctx: Context, sender: str, msg: ErrorCorrectionRequest):
+  response = msg.response
+  file_path = os.path.join(response['where']['repository_path'], response['where']['file_name'])
+  line_number = int(response['where']['line_number'])
+  suggested_code = response['how']['suggested_code_solution']
+  
+  with open(file_path, 'r', encoding='utf-8') as file:
+    lines = file.readlines()
+  
+  # Preserve indentation
+  if 0 < line_number <= len(lines):
+    stripped_line = lines[line_number - 1].strip()
+    num_whitespace = len(lines[line_number - 1]) - len(stripped_line)
+    lines[line_number - 1] = " " * num_whitespace + suggested_code
+```
+
+The agent:
+1. Extracts file path and line number from JSON response
+2. Reads the file
+3. Calculates the original indentation
+4. Replaces the line while preserving whitespace
+5. Writes the file back
+
+## Error Handling
+
+Splat handles various failure scenarios:
+
+<Accordion title="Syntax errors in analyzed files">
+  ```python
+  # From utils.py:152-153
+  try:
+    tree = ast.parse(content)
+    # ... process imports
+  except SyntaxError:
+    pass  # Handle files with syntax errors gracefully
+  ```
+  
+  Files with syntax errors are still included in context but won't have their imports analyzed.
+</Accordion>
+
+<Accordion title="Missing or invalid files">
+  ```python
+  # From utils.py:95-98
+  for path in paths:
+    if os.path.exists(path):  # Some paths are hallucinative / not real
+      with open(path, 'r') as f:
+        content = f.read()
+  ```
+  
+  Non-existent files are silently skipped during context gathering.
+</Accordion>
+
+<Accordion title="API failures">
+  If the Groq API call fails, the exception will propagate up to the CLI layer. Future versions may include retry logic or fallback strategies.
+</Accordion>
+
+## Best Practices
+
+<Note>
+**For optimal AI analysis:**
+
+1. **Use the `-r` flag** for complex errors that span multiple files
+2. **Provide descriptive variable names** - helps the LLM understand intent
+3. **Include comments** in tricky code sections - gives context to the AI
+4. **Keep functions focused** - easier for the LLM to reason about
+5. **Run from project root** - ensures correct path resolution
+</Note>
+
+## Limitations
+
+**Current limitations of the AI analysis:**
+
+- **Token limits** - Very large codebases may exceed the 8192 token context window
+- **Single error focus** - Only the most critical error is addressed
+- **Line-level fixes** - More extensive refactoring may be needed manually
+- **Python only** - Currently supports Python tracebacks exclusively
+- **No test generation** - Doesn't automatically create tests for fixes
+
+## Next Steps
+
+- Learn how context gathering works in [Context Gathering](/concepts/context-gathering)
+- Understand the full pipeline in [How It Works](/concepts/how-it-works)
+- Explore integration options in the [API Reference](/reference/api)

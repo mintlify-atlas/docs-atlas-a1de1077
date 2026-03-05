@@ -1,0 +1,252 @@
+---
+title: CLI Reference
+description: Complete command-line interface reference for Splat
+---
+
+# CLI Reference
+
+Splat is an AI-powered debugging CLI tool that analyzes Python errors and provides intelligent solutions. This page documents all available commands, flags, and options.
+
+## Installation
+
+Install Splat using pip:
+
+```bash
+pip install splat
+```
+
+## Basic Usage
+
+```bash
+splat [FLAGS] <entrypoint>
+```
+
+## Commands
+
+### `splat`
+
+The main command that runs your Python script in a monitored environment, captures errors, and provides AI-powered debugging assistance.
+
+<ParamField path="entrypoint" type="string" required>
+  The command to execute your Python script (e.g., `python3 app.py`)
+</ParamField>
+
+#### Flags
+
+<ParamField path="-r" type="flag">
+  **Relational Mode**: Includes all related files discovered through import relationships.
+  
+  When enabled, Splat builds a dependency graph by parsing imports in error files and recursively includes all connected modules. This provides comprehensive context for complex errors spanning multiple files.
+  
+  **Without `-r`**: Only files mentioned in the error traceback are analyzed.
+  
+  **With `-r`**: All files with Nth-degree import relationships are included.
+</ParamField>
+
+<ParamField path="-g" type="flag">
+  **Global Mode**: Includes all files in the repository (respecting `.gitignore`).
+  
+  This flag creates a complete dependency graph of your entire project, useful for understanding how errors propagate across your codebase.
+</ParamField>
+
+#### Examples
+
+<CodeGroup>
+```bash Basic Error Analysis
+splat python3 main.py
+```
+
+```bash Relational Analysis
+splat -r python3 main.py
+```
+
+```bash Global Analysis
+splat -g python3 app.py
+```
+</CodeGroup>
+
+### Interactive Shell
+
+Splat includes an interactive shell mode (currently in the `zap` CLI implementation):
+
+```bash
+splat
+```
+
+This starts an interactive session where you can:
+
+#### Shell Commands
+
+<ParamField path="hello" type="command">
+  Print a hello message
+  
+  ```bash
+  zap> hello
+  Hello!
+  ```
+</ParamField>
+
+<ParamField path="echo" type="command">
+  Echo the input back to the terminal
+  
+  ```bash
+  zap> echo test message
+  test message
+  ```
+</ParamField>
+
+<ParamField path="start" type="command">
+  Start a monitored terminal session using tmux
+  
+  This command:
+  - Initializes a new tmux session
+  - Starts process monitoring
+  - Enables real-time error capture
+  
+  ```bash
+  zap> start
+  tmux session and monitoring started successfully
+  ```
+</ParamField>
+
+<ParamField path="send" type="command">
+  Send a command to the monitored terminal session
+  
+  ```bash
+  zap> send ls -la
+  Command sent: ls -la
+  ```
+</ParamField>
+
+<ParamField path="exit" type="command">
+  Exit the interactive shell and cleanup sessions
+  
+  ```bash
+  zap> exit
+  Goodbye!
+  ```
+</ParamField>
+
+<ParamField path="quit" type="command">
+  Alias for `exit`
+</ParamField>
+
+## Error Analysis Workflow
+
+When Splat captures an error, it follows this workflow:
+
+1. **Execution**: Runs your Python script and captures any errors
+2. **Traceback Parsing**: Extracts file paths and line numbers from the error stack
+3. **Context Gathering**: Collects relevant source code based on flags:
+   - Default: Only files in the traceback
+   - `-r`: Files + their import dependencies
+   - `-g`: Entire repository
+4. **AI Analysis**: Sends error and context to LLM for analysis
+5. **Structured Response**: Returns location, description, and suggested fix
+6. **Interactive Fix**: Prompts you to apply the suggested solution
+
+## Output Format
+
+Splat provides structured error information in a user-friendly terminal interface:
+
+```
+🔎 Details about error
+✅ We found the first instance of the error at line 42.
+✅ The owner of the error: main.py.
+✅ The type of the error: SyntaxError.
+✅ Isolated error message: '(' was never closed
+
+See suggested change? ... Yes / No
+```
+
+### Response Structure
+
+The AI analysis returns:
+
+<ResponseField name="where" type="object">
+  Location information about the error
+  
+  <ResponseField name="repository_path" type="string">
+    Absolute path to the repository root
+  </ResponseField>
+  
+  <ResponseField name="file_name" type="string">
+    Name of the file containing the error
+  </ResponseField>
+  
+  <ResponseField name="line_number" type="string">
+    Line number where the error occurred
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="what" type="object">
+  Description of the error
+  
+  <ResponseField name="error_type" type="string">
+    Specific Python error type (e.g., SyntaxError, TypeError)
+  </ResponseField>
+  
+  <ResponseField name="description" type="string">
+    Natural language explanation of the error
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="how" type="object">
+  Solution information
+  
+  <ResponseField name="error_origination" type="string">
+    Line number where the error originated
+  </ResponseField>
+  
+  <ResponseField name="suggested_code_solution" type="string">
+    Code snippet that fixes the error
+  </ResponseField>
+</ResponseField>
+
+## Environment Variables
+
+<ParamField path="API" type="string" required>
+  API key for the Groq LLM service. Set this in your `.env` file:
+  
+  ```bash
+  API=your_groq_api_key_here
+  ```
+</ParamField>
+
+<ParamField path="MODEL" type="string">
+  Model identifier for AI analysis (used in some configurations)
+</ParamField>
+
+## Configuration
+
+Splat uses sensible defaults but can be configured through:
+
+- **Environment variables**: Set in `.env` file
+- **Project root detection**: Automatically detects using `os.getcwd()`
+- **Git integration**: Respects `.gitignore` when using `-g` flag
+
+## Exit Codes
+
+- `0`: Successful execution (no errors or error successfully analyzed)
+- `1`: Error occurred and analysis failed
+- `130`: User interrupted with Ctrl+C
+
+## Tips
+
+<Tip>
+  **Start with basic mode**: Try running without flags first. Use `-r` only if the error involves multiple interconnected files.
+</Tip>
+
+<Tip>
+  **Interactive fixes**: Splat will prompt you before applying any code changes. Review the suggestion carefully.
+</Tip>
+
+<Warning>
+  **Production environments**: Splat is designed for development. Don't use it in production deployments.
+</Warning>
+
+## Related
+
+- [API Reference](/reference/api) - Programmatic usage
+- [How It Works](/concepts/how-it-works) - Internal architecture
+- [Examples](/usage/examples) - Common use cases

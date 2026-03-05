@@ -1,0 +1,442 @@
+---
+title: 'Flags & Options'
+description: 'Detailed reference for all Splat command-line flags and options'
+icon: 'flag'
+---
+
+## Overview
+
+Splat's behavior can be modified using command-line flags. These flags control how much context is gathered and sent to the AI model for analysis.
+
+## Available Flags
+
+### `-r` (Relational Context)
+
+Enables **relational context gathering**, which builds a dependency graph of your project and includes all files connected to the error, not just those directly mentioned in the stack trace.
+
+#### Syntax
+
+```bash
+splat squash -r <ENTRYPOINT>
+```
+
+<ParamField path="-r" type="flag">
+  **Relational mode**: Gather all files to the Nth degree related to error stack files.
+  
+  When enabled, Splat:
+  1. Parses the error stack to identify initial error files
+  2. Builds an adjacency list of import relationships
+  3. Recursively traverses the dependency graph
+  4. Collects all connected files
+  5. Sends comprehensive context to the AI model
+  
+  Source: `relational.py:25-28`, `utils.py:108-122`
+</ParamField>
+
+#### Usage Examples
+
+<CodeGroup>
+```bash Without -r Flag (Default)
+splat squash "python3 app.py"
+# Only includes files mentioned in error traceback
+```
+
+```bash With -r Flag
+splat squash -r "python3 app.py"
+# Includes error files + all their dependencies
+```
+</CodeGroup>
+
+### How the `-r` Flag Works
+
+<Steps>
+  <Step title="Parse Error Stack">
+    First, Splat identifies all files mentioned in the error traceback.
+    
+    ```python
+    # Example error files
+    collected_traceback_files = ['app.py', 'utils.py', 'models.py']
+    ```
+    
+    Source: `relational.py:21`
+  </Step>
+  
+  <Step title="Build Dependency Graph">
+    When `-r` is set, Splat analyzes each file's imports to build an adjacency list.
+    
+    ```python
+    # Adjacency list structure
+    graph = {
+      'app.py': ['utils.py', 'models.py', 'config.py'],
+      'utils.py': ['helpers.py', 'constants.py'],
+      'models.py': ['database.py', 'schemas.py'],
+      # ... and so on
+    }
+    ```
+    
+    Source: `utils.py:130-189`, `relational.py:26`
+  </Step>
+  
+  <Step title="Traverse Connections">
+    Splat recursively collects all files connected to the error files, to the Nth degree.
+    
+    ```python
+    # Starting with error files
+    start_files = ['app.py', 'utils.py']
+    
+    # Collects: app.py, utils.py, models.py, config.py, 
+    #           helpers.py, constants.py, database.py, schemas.py, ...
+    all_related_files = get_nth_related_files(start_files, graph)
+    ```
+    
+    Source: `utils.py:108-122`, `relational.py:27`
+  </Step>
+  
+  <Step title="Package Context">
+    All related file contents are packaged and sent to the AI model.
+    
+    Source: `utils.py:81-100`, `relational.py:28`
+  </Step>
+</Steps>
+
+### When to Use `-r`
+
+<Tabs>
+  <Tab title="Use -r Flag">
+    ✅ **Complex multi-file projects**
+    
+    ```bash
+    splat squash -r "python3 main.py"
+    ```
+    
+    When your error involves:
+    - Multiple interconnected modules
+    - Complex import chains
+    - Inherited classes or functions from other files
+    - Configuration files that affect behavior
+    
+    ---
+    
+    ✅ **Unclear error origins**
+    
+    ```bash
+    splat squash -r "npm start"
+    ```
+    
+    When:
+    - The error message is vague
+    - The stack trace doesn't pinpoint the issue
+    - You suspect the problem is in imported dependencies
+    
+    ---
+    
+    ✅ **Framework-based applications**
+    
+    ```bash
+    splat squash -r "python manage.py runserver"
+    ```
+    
+    For applications using:
+    - Django, Flask, FastAPI
+    - Next.js, React, Vue
+    - Spring Boot, Express
+    - Any framework with many interconnected files
+  </Tab>
+  
+  <Tab title="Skip -r Flag">
+    ❌ **Simple single-file scripts**
+    
+    ```bash
+    splat squash "python3 hello.py"
+    ```
+    
+    When:
+    - Error is in a standalone script
+    - No external imports involved
+    - Clear, simple error message
+    
+    ---
+    
+    ❌ **Obvious syntax errors**
+    
+    ```bash
+    splat squash "python3 script.py"
+    ```
+    
+    For errors like:
+    - Missing parentheses
+    - Typos in variable names
+    - Indentation errors
+    - Simple type mismatches
+    
+    ---
+    
+    ❌ **Large projects with many files**
+    
+    ```bash
+    # May include too much context
+    splat squash -r "python3 app.py"
+    ```
+    
+    <Warning>
+      In very large projects, using `-r` might gather excessive context, potentially slowing down analysis. Start without `-r` and add it if needed.
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Comparison: With vs. Without `-r`
+
+### Example Project Structure
+
+```plaintext
+project/
+├── app.py          # Entry point
+├── utils.py        # Used by app.py
+├── models.py       # Used by app.py
+├── database.py     # Used by models.py
+├── config.py       # Used by app.py
+└── helpers.py      # Used by utils.py
+```
+
+### Error in `models.py`
+
+<CodeGroup>
+```bash Without -r Flag
+$ splat squash "python3 app.py"
+
+# Files analyzed:
+# - app.py (in stack trace)
+# - models.py (in stack trace)
+# Total: 2 files
+```
+
+```bash With -r Flag
+$ splat squash -r "python3 app.py"
+
+# Files analyzed:
+# - app.py (in stack trace)
+# - models.py (in stack trace)
+# - utils.py (imported by app.py)
+# - config.py (imported by app.py)
+# - database.py (imported by models.py)
+# - helpers.py (imported by utils.py)
+# Total: 6 files
+```
+</CodeGroup>
+
+<Note>
+  The `-r` flag provides the AI model with much more context, leading to more accurate and contextual debugging suggestions.
+</Note>
+
+## Dependency Graph Algorithm
+
+Splat's `-r` flag uses a sophisticated algorithm to build and traverse the dependency graph:
+
+### Building the Adjacency List
+
+```python
+def build_adjacency_list(files: List[str], project_root: str):
+    """
+    Creates a graph where each file maps to its imported files.
+    Uses AST parsing to extract import statements.
+    """
+    # For each file:
+    # 1. Parse Python AST
+    # 2. Extract import and from-import statements
+    # 3. Resolve import paths to actual files
+    # 4. Recursively process imported files
+```
+
+Source: `utils.py:130-189`
+
+### Traversing Relationships
+
+```python
+def get_nth_related_files(start_files: List[str], graph: Dict):
+    """
+    BFS traversal to collect all related files.
+    Continues until all connections are exhausted.
+    """
+    # Start with error files
+    # Visit each file's neighbors
+    # Add new files to queue
+    # Continue until no new files found
+```
+
+Source: `utils.py:108-122`
+
+<Accordion title="View Full Implementation">
+```python
+def get_nth_related_files(start_files: List[str], graph: Dict[str, List[str]]) -> Set[str]:
+  related_files = set(start_files)
+  planned_visit = list(start_files)
+  possible_files = set()
+
+  while planned_visit:
+    current = planned_visit.pop(0)
+    possible_files.add(current)
+
+    for neighbor in graph.get(current, []):
+      if neighbor not in related_files:
+        related_files.add(neighbor)
+        planned_visit.append(neighbor)
+
+  return possible_files
+```
+
+From: `utils.py:108-122`
+</Accordion>
+
+## Import Detection
+
+Splat analyzes Python files using AST (Abstract Syntax Tree) parsing to detect imports:
+
+<CodeGroup>
+```python Standard Imports
+import os
+import sys
+from typing import List
+
+# Splat detects: os, sys, typing
+```
+
+```python Relative Imports
+from .models import User
+from ..utils import helpers
+import myapp.database
+
+# Splat resolves paths and adds files
+```
+
+```python Multiple Imports
+from utils import (
+    helper_func,
+    process_data,
+    validate_input
+)
+
+# Splat adds: utils.py
+```
+</CodeGroup>
+
+Source: `utils.py:146-151`
+
+### Handling Import Errors
+
+<Warning>
+  If a file has syntax errors that prevent AST parsing, Splat will skip parsing imports from that file but will still include it in the analysis.
+</Warning>
+
+```python
+try:
+    tree = ast.parse(content)
+    # Extract imports...
+except SyntaxError:
+    # Skip import parsing, but include file
+    pass
+```
+
+Source: `utils.py:145-153`
+
+## Performance Considerations
+
+### Context Size
+
+<Tabs>
+  <Tab title="Without -r">
+    **Minimal Context**
+    
+    - Only files in error traceback
+    - Fast analysis
+    - May miss related issues
+    
+    Best for:
+    - Simple errors
+    - Quick debugging
+    - Single-file scripts
+  </Tab>
+  
+  <Tab title="With -r">
+    **Comprehensive Context**
+    
+    - All related files
+    - Slower analysis (more context to process)
+    - More accurate suggestions
+    
+    Best for:
+    - Complex errors
+    - Multi-file projects
+    - Framework applications
+  </Tab>
+</Tabs>
+
+### File Filtering
+
+<Note>
+  Splat automatically respects `.gitignore` to avoid including:
+  - `node_modules/`
+  - `.venv/` or `venv/`
+  - `__pycache__/`
+  - Build artifacts
+  - Sensitive files
+</Note>
+
+This keeps context relevant and protects sensitive information.
+
+## Future Flags
+
+While currently only `-r` is implemented, the codebase includes references to potential future flags:
+
+<Accordion title="Planned Flag: -g (Global)">
+  From source code comments in `utils.py:4-6`:
+  
+  > If the user does provide "-g", the graph will contain all files from the repo, with respect to the .gitignore.
+  
+  This flag would include **all project files** in the analysis, not just those related to the error.
+  
+  <Warning>
+    This flag is not yet implemented. Using `-g` currently has no effect.
+  </Warning>
+</Accordion>
+
+## Flag Usage Patterns
+
+### Recommended Workflow
+
+<Steps>
+  <Step title="Start Simple">
+    First, try without any flags:
+    
+    ```bash
+    splat squash "python3 app.py"
+    ```
+    
+    This provides a quick analysis with minimal context.
+  </Step>
+  
+  <Step title="Add Relational Context">
+    If the solution doesn't address the issue, add `-r`:
+    
+    ```bash
+    splat squash -r "python3 app.py"
+    ```
+    
+    This gives the AI model more context to work with.
+  </Step>
+  
+  <Step title="Iterate">
+    Based on the results, adjust your approach:
+    - Use `-r` for complex projects
+    - Skip `-r` for simple scripts
+    - Check `.gitignore` if sensitive files are a concern
+  </Step>
+</Steps>
+
+<Tip>
+  For most production applications and frameworks, using `-r` from the start is recommended to get the most accurate analysis.
+</Tip>
+
+## See Also
+
+- [Command Reference](/usage/commands) - Full command documentation
+- [Usage Examples](/usage/examples) - Real-world scenarios with flags

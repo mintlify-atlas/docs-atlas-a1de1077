@@ -1,0 +1,719 @@
+---
+title: Python API Reference
+description: Programmatic API reference for using Splat in your Python applications
+---
+
+# Python API Reference
+
+Use Splat's Python API to integrate AI-powered error analysis into your applications, test frameworks, or CI/CD pipelines.
+
+## Installation
+
+```bash
+pip install splat
+```
+
+## Core Functions
+
+### `relational_error_parsing_function`
+
+Main function for capturing and analyzing errors with contextual file gathering.
+
+```python
+from relational import relational_error_parsing_function
+```
+
+<ParamField path="entrypoint" type="List[str]" required>
+  Command to execute as a list of strings
+  
+  ```python
+  entrypoint = ['python3', 'main.py']
+  ```
+</ParamField>
+
+<ParamField path="flag" type="str" default='""'>
+  Analysis mode flag:
+  - `""` (empty): Only traceback files
+  - `"-r"`: Include related files via import graph
+  - `"-g"`: Include all repository files
+</ParamField>
+
+<ResponseField name="return" type="Tuple[str, str, str]">
+  Returns a tuple containing:
+  
+  <ResponseField name="traceback" type="str">
+    Full error traceback from stderr
+  </ResponseField>
+  
+  <ResponseField name="error_information" type="str">
+    Formatted error message
+  </ResponseField>
+  
+  <ResponseField name="context" type="str">
+    Collected source code from relevant files
+  </ResponseField>
+</ResponseField>
+
+#### Example
+
+<CodeGroup>
+```python Basic Usage
+from relational import relational_error_parsing_function
+
+traceback, error_info, context = relational_error_parsing_function(
+    entrypoint=['python3', 'app.py']
+)
+
+if traceback:
+    print(f"Error occurred: {error_info}")
+    print(f"Context length: {len(context)} chars")
+```
+
+```python With Relational Flag
+from relational import relational_error_parsing_function
+
+# Include all related files through imports
+traceback, error_info, context = relational_error_parsing_function(
+    entrypoint=['python3', 'server.py'],
+    flag='-r'
+)
+```
+
+```python Error Handling
+from relational import relational_error_parsing_function
+
+try:
+    traceback, error_info, context = relational_error_parsing_function(
+        entrypoint=['python3', 'script.py'],
+        flag='-r'
+    )
+    
+    if not traceback:
+        print("No errors detected!")
+    else:
+        # Process the error
+        print(f"Error: {error_info}")
+except Exception as e:
+    print(f"Splat error: {e}")
+```
+</CodeGroup>
+
+---
+
+### `process`
+
+Sends error information to the AI model for analysis and receives structured debugging advice.
+
+```python
+from process.process import process
+```
+
+<ParamField path="traceback_message" type="str" required>
+  The full traceback from the error
+</ParamField>
+
+<ParamField path="original_error_information" type="str" required>
+  The original error message
+</ParamField>
+
+<ParamField path="context" type="str" required>
+  Source code context from relevant files
+</ParamField>
+
+<ResponseField name="return" type="str">
+  JSON string containing structured error analysis with `where`, `what`, and `how` fields
+</ResponseField>
+
+#### Example
+
+<CodeGroup>
+```python Complete Pipeline
+from relational import relational_error_parsing_function
+from process.process import process
+import json
+
+# Step 1: Capture error and gather context
+traceback, error_info, context = relational_error_parsing_function(
+    entrypoint=['python3', 'app.py'],
+    flag='-r'
+)
+
+if traceback:
+    # Step 2: Get AI analysis
+    response = process(traceback, error_info, context)
+    
+    # Step 3: Parse the response
+    analysis = json.loads(response)
+    
+    print(f"Error in {analysis['where']['file_name']}:{analysis['where']['line_number']}")
+    print(f"Type: {analysis['what']['error_type']}")
+    print(f"Fix: {analysis['how']['suggested_code_solution']}")
+```
+
+```python Custom Error Handler
+import json
+from relational import relational_error_parsing_function
+from process.process import process
+
+def debug_script(script_path: str, use_relational: bool = False) -> dict:
+    """Run a script and return debugging information."""
+    flag = '-r' if use_relational else ''
+    
+    traceback, error_info, context = relational_error_parsing_function(
+        entrypoint=['python3', script_path],
+        flag=flag
+    )
+    
+    if not traceback:
+        return {'success': True, 'message': 'No errors found'}
+    
+    response = process(traceback, error_info, context)
+    analysis = json.loads(response)
+    
+    return {
+        'success': False,
+        'error': analysis
+    }
+
+# Use it
+result = debug_script('myapp.py', use_relational=True)
+if not result['success']:
+    error = result['error']
+    print(f"Fix needed at line {error['where']['line_number']}")
+```
+</CodeGroup>
+
+---
+
+### `splat_find`
+
+Execute a command and capture its stdout, stderr, and return code.
+
+```python
+from errortrace import splat_find
+```
+
+<ParamField path="command" type="str" required>
+  Shell command to execute
+</ParamField>
+
+<ResponseField name="return" type="str">
+  JSON string containing execution results
+  
+  ```json
+  {
+    "stdout": "...",
+    "stderr": "...",
+    "returncode": 0
+  }
+  ```
+</ResponseField>
+
+#### Example
+
+<CodeGroup>
+```python Basic Execution
+from errortrace import splat_find
+import json
+
+result = splat_find('python3 test.py')
+data = json.loads(result)
+
+if data['returncode'] != 0:
+    print(f"Error: {data['stderr']}")
+else:
+    print(f"Output: {data['stdout']}")
+```
+
+```python Testing Integration
+from errortrace import splat_find
+import json
+
+def test_script_execution():
+    result = splat_find('python3 -m pytest tests/')
+    data = json.loads(result)
+    
+    assert data['returncode'] == 0, f"Tests failed: {data['stderr']}"
+    return data['stdout']
+```
+</CodeGroup>
+
+---
+
+## Utility Functions
+
+### `parse_error_stack`
+
+Extract file paths from Python error tracebacks.
+
+```python
+from utils.utils import parse_error_stack
+```
+
+<ParamField path="error_info" type="str" required>
+  Error traceback string to parse
+</ParamField>
+
+<ResponseField name="return" type="List[str]">
+  List of unique file paths found in the traceback
+</ResponseField>
+
+#### Example
+
+```python
+from utils.utils import parse_error_stack
+
+error_trace = '''
+Traceback (most recent call last):
+  File "main.py", line 10, in <module>
+    from utils import helper
+  File "utils/helper.py", line 5, in <module>
+    import config
+ModuleNotFoundError: No module named 'config'
+'''
+
+files = parse_error_stack(error_trace)
+print(files)  # ['main.py', 'utils/helper.py']
+```
+
+---
+
+### `build_adjacency_list`
+
+Build a dependency graph from Python import statements.
+
+```python
+from utils.utils import build_adjacency_list
+```
+
+<ParamField path="files" type="List[str]" required>
+  List of Python file paths to analyze
+</ParamField>
+
+<ParamField path="project_root" type="str" required>
+  Root directory of the project
+</ParamField>
+
+<ResponseField name="return" type="Dict[str, List[str]]">
+  Adjacency list mapping each file to its imported dependencies
+</ResponseField>
+
+#### Example
+
+```python
+from utils.utils import build_adjacency_list
+import os
+
+project_root = os.getcwd()
+files = ['main.py', 'utils/helper.py']
+
+graph = build_adjacency_list(files, project_root)
+print(graph)
+# {
+#   'main.py': ['utils/helper.py', 'config.py'],
+#   'utils/helper.py': ['models/user.py']
+# }
+```
+
+---
+
+### `get_nth_related_files`
+
+Recursively find all files connected through imports.
+
+```python
+from utils.utils import get_nth_related_files
+```
+
+<ParamField path="start_files" type="List[str]" required>
+  Starting files for traversal
+</ParamField>
+
+<ParamField path="graph" type="Dict[str, List[str]]" required>
+  Dependency graph from `build_adjacency_list`
+</ParamField>
+
+<ResponseField name="return" type="Set[str]">
+  Set of all files related to start_files by any degree
+</ResponseField>
+
+#### Example
+
+```python
+from utils.utils import build_adjacency_list, get_nth_related_files
+import os
+
+# Build the graph
+project_root = os.getcwd()
+error_files = ['main.py']
+graph = build_adjacency_list(error_files, project_root)
+
+# Find all related files
+all_related = get_nth_related_files(error_files, graph)
+print(f"Found {len(all_related)} related files")
+for file in all_related:
+    print(f"  - {file}")
+```
+
+---
+
+### `run_mock_repopack`
+
+Collect and format source code from multiple files.
+
+```python
+from utils.utils import run_mock_repopack
+```
+
+<ParamField path="paths" type="List[str]" required>
+  List of file paths to read
+</ParamField>
+
+<ParamField path="style" type="str" default="'json'">
+  Output format style (currently only 'json' supported)
+</ParamField>
+
+<ResponseField name="return" type="str">
+  Formatted string containing file contents with separators
+</ResponseField>
+
+#### Example
+
+```python
+from utils.utils import run_mock_repopack
+
+files = ['main.py', 'config.py', 'utils/helper.py']
+context = run_mock_repopack(files)
+
+print(context)
+# Output:
+# ==================================================
+# File: main.py
+# Content:
+# import config
+# ...
+# ==================================================
+```
+
+---
+
+### `detect_framework_or_language`
+
+Detect the programming language or framework from commands and file patterns.
+
+```python
+from utils.utils import detect_framework_or_language
+```
+
+<ParamField path="command" type="str" required>
+  Command string or directory to analyze
+</ParamField>
+
+<ParamField path="directory" type="str" default="'.'">
+  Directory to check for framework files
+</ParamField>
+
+<ResponseField name="return" type="str">
+  Detected framework/language name or 'unknown'
+</ResponseField>
+
+#### Example
+
+```python
+from utils.utils import detect_framework_or_language
+
+framework = detect_framework_or_language('python3 app.py')
+print(framework)  # 'python'
+
+framework = detect_framework_or_language('npm run dev')
+print(framework)  # Could detect 'nextjs', 'react', etc.
+```
+
+---
+
+## Agent API
+
+### File Writer Agent
+
+Splat includes a uAgents-based file writer for applying fixes.
+
+```python
+from agents.file_writer_agent import file_writer, ErrorCorrectionRequest
+```
+
+#### Models
+
+<ParamField path="ErrorCorrectionRequest" type="Model">
+  Request model for applying error corrections
+  
+  **Attributes:**
+  - `response` (dict): Analysis response from `process()` function
+</ParamField>
+
+<ParamField path="ErrorCorrectionResponse" type="Model">
+  Response model from correction operations
+  
+  **Attributes:**
+  - `success` (bool): Whether the operation succeeded
+  - `message` (str): Status message
+</ParamField>
+
+#### REST Endpoint
+
+The file writer agent exposes a REST endpoint:
+
+```
+POST http://localhost:8000/apply_correction
+```
+
+**Request body:**
+```json
+{
+  "response": {
+    "where": {
+      "repository_path": "/path/to/repo",
+      "file_name": "main.py",
+      "line_number": "10"
+    },
+    "how": {
+      "suggested_code_solution": "fixed_code_here"
+    }
+  }
+}
+```
+
+#### Example
+
+<CodeGroup>
+```python Using the Agent
+from agents.file_writer_agent import file_writer
+
+if __name__ == "__main__":
+    print("Starting file writer agent server on http://localhost:8000")
+    file_writer.run()
+```
+
+```python HTTP Client
+import requests
+import json
+
+# Apply a correction via HTTP
+response_data = {
+    "response": {
+        "where": {
+            "repository_path": "/home/user/project",
+            "file_name": "app.py",
+            "line_number": "25"
+        },
+        "how": {
+            "suggested_code_solution": "print('Hello, World!')"
+        }
+    }
+}
+
+resp = requests.post(
+    'http://localhost:8000/apply_correction',
+    json=response_data
+)
+
+print(resp.json())
+# {'success': True, 'message': 'File app.py updated successfully'}
+```
+</CodeGroup>
+
+---
+
+## Terminal UI
+
+### `terminalstep1`
+
+Display error analysis results in an interactive terminal UI.
+
+```python
+from terminalout.terminal import terminalstep1
+```
+
+<ParamField path="json_object" type="str" required>
+  JSON string containing error analysis from `process()` function
+</ParamField>
+
+<ResponseField name="return" type="Tuple[bool, dict | None]">
+  Tuple containing:
+  - `bool`: Whether user accepted the suggested fix
+  - `dict | None`: The analysis data if accepted, None otherwise
+</ResponseField>
+
+#### Example
+
+```python
+from relational import relational_error_parsing_function
+from process.process import process
+from terminalout.terminal import terminalstep1
+
+# Capture and analyze error
+traceback, error_info, context = relational_error_parsing_function(
+    entrypoint=['python3', 'app.py'],
+    flag='-r'
+)
+
+if traceback:
+    # Get AI analysis
+    response = process(traceback, error_info, context)
+    
+    # Show interactive UI
+    accepted, data = terminalstep1(response)
+    
+    if accepted:
+        print("User accepted the fix!")
+        print(f"Fix: {data['how']['suggested_code_solution']}")
+    else:
+        print("User declined the fix")
+```
+
+---
+
+## Complete Example
+
+Here's a full example integrating all components:
+
+```python
+import os
+import json
+from relational import relational_error_parsing_function
+from process.process import process
+from terminalout.terminal import terminalstep1
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+def debug_python_script(script_path: str, use_relational: bool = True):
+    """Complete debugging workflow for a Python script."""
+    
+    # Step 1: Run script and capture error
+    print(f"Analyzing {script_path}...")
+    flag = '-r' if use_relational else ''
+    
+    traceback, error_info, context = relational_error_parsing_function(
+        entrypoint=['python3', script_path],
+        flag=flag
+    )
+    
+    # Step 2: Check if error occurred
+    if not traceback:
+        print("✅ No errors found!")
+        return True
+    
+    # Step 3: Get AI analysis
+    print("🤖 Analyzing error with AI...")
+    response = process(traceback, error_info, context)
+    
+    # Step 4: Show interactive UI
+    accepted, data = terminalstep1(response)
+    
+    # Step 5: Handle user decision
+    if accepted:
+        # User can apply the fix manually or via the file writer agent
+        analysis = json.loads(response)
+        print("\n📝 Suggested fix:")
+        print(analysis['how']['suggested_code_solution'])
+        return True
+    else:
+        print("\n❌ No changes applied")
+        return False
+
+if __name__ == "__main__":
+    import sys
+    
+    if len(sys.argv) < 2:
+        print("Usage: python debug.py <script_path>")
+        sys.exit(1)
+    
+    script = sys.argv[1]
+    debug_python_script(script)
+```
+
+---
+
+## Configuration
+
+### Environment Variables
+
+Create a `.env` file in your project root:
+
+```bash
+# Required: Groq API key for LLM
+API=your_groq_api_key_here
+
+# Optional: Model configuration
+MODEL=llama3-70b-8192
+```
+
+### Model Configuration
+
+The `process()` function uses the Groq API with the following configuration:
+
+- **Default model**: `llama3-70b-8192`
+- **Response format**: JSON object
+- **Temperature**: Default (not specified)
+
+---
+
+## Error Handling
+
+<Warning>
+  Always wrap Splat API calls in try-except blocks. Network issues, API errors, or malformed responses can raise exceptions.
+</Warning>
+
+```python
+from relational import relational_error_parsing_function
+from process.process import process
+import json
+
+try:
+    traceback, error_info, context = relational_error_parsing_function(
+        entrypoint=['python3', 'app.py'],
+        flag='-r'
+    )
+    
+    if traceback:
+        response = process(traceback, error_info, context)
+        analysis = json.loads(response)
+        # Use analysis...
+        
+except subprocess.CalledProcessError as e:
+    print(f"Script execution failed: {e}")
+except json.JSONDecodeError as e:
+    print(f"Invalid JSON response from AI: {e}")
+except Exception as e:
+    print(f"Unexpected error: {e}")
+```
+
+---
+
+## Type Hints
+
+For better IDE support, use type hints:
+
+```python
+from typing import Tuple, List, Dict, Set
+from relational import relational_error_parsing_function
+
+def analyze_script(entrypoint: List[str]) -> Tuple[str, str, str]:
+    return relational_error_parsing_function(entrypoint)
+
+def build_dependency_graph(
+    files: List[str], 
+    root: str
+) -> Dict[str, List[str]]:
+    from utils.utils import build_adjacency_list
+    return build_adjacency_list(files, root)
+```
+
+---
+
+## Related
+
+- [CLI Reference](/reference/cli) - Command-line usage
+- [How It Works](/concepts/how-it-works) - Architecture overview
+- [Examples](/usage/examples) - Complete usage examples

@@ -1,0 +1,331 @@
+---
+title: 'How Splat Works'
+description: 'Architecture overview and system design of the AI-powered debugging pipeline'
+---
+
+## Overview
+
+Splat is an AI-powered debugging tool that automatically analyzes Python errors and suggests fixes. It combines traditional static analysis with large language model (LLM) intelligence to understand your code's context and provide actionable solutions.
+
+<Info>
+Splat uses **Groq's LLM API** (llama3-70b-8192) for fast, intelligent error analysis and generates structured JSON responses for reliable parsing.
+</Info>
+
+## The Pipeline
+
+Splat's architecture follows a clear four-stage pipeline that processes errors from capture to resolution:
+
+<Steps>
+  <Step title="Error Capture">
+    Splat executes your Python code in a subprocess and captures any errors that occur.
+    
+    ```python
+    # From relational.py:14-20
+    try:
+      subprocess.run(entrypoint, capture_output=True, check=True, text=True)
+      return "", "", ""  # Return empty strings if no error occurs
+    except subprocess.CalledProcessError as error:
+      # Capture the error output to simulate the error stack
+      traceback: str = error.stderr if error.stderr else str(error)
+      error_information: str = str(error)
+    ```
+    
+    The tool runs your command (e.g., `python3 foo.py`) and catches any `CalledProcessError` exceptions, extracting both the traceback and error information.
+  </Step>
+
+  <Step title="Context Gathering">
+    Splat parses the error traceback to identify which files are involved, then gathers relevant source code.
+    
+    **Basic Mode (no flags):**
+    - Parses error stack to extract file paths
+    - Collects only the files mentioned in the traceback
+    
+    **Relational Mode (`-r` flag):**
+    - Builds a dependency graph using AST parsing
+    - Recursively follows import statements
+    - Gathers all files connected to the error
+    
+    See [Context Gathering](/concepts/context-gathering) for detailed information.
+  </Step>
+
+  <Step title="AI Analysis">
+    Splat sends the error information and code context to Groq's LLM for analysis.
+    
+    ```python
+    # From process/process.py:13-38
+    chat_completion = client.chat.completions.create(
+      messages=[
+        {
+          "role": "system",
+          "content": "You are an expert software debugging assistant..."
+        },
+        {
+          "role": "user",
+          "content": f"Context: {context}\n\nTraceback: {traceback_message}..."
+        }
+      ],
+      model="llama3-70b-8192",
+      response_format={"type": "json_object"}
+    )
+    ```
+    
+    The LLM returns structured JSON with error location, type, description, and suggested fix.
+    
+    See [Error Analysis](/concepts/error-analysis) for details on the AI prompting strategy.
+  </Step>
+
+  <Step title="Interactive Resolution">
+    Splat presents the analysis to you through an interactive terminal UI.
+    
+    ```python
+    # From terminalout/terminal.py:15-19
+    print_formatted_text(HTML(f"✅ We found the first instance at line {data['where']['line_number']}"))
+    print_formatted_text(HTML(f"✅ The owner: {data['where']['file_name']}"))
+    print_formatted_text(HTML(f"✅ Error type: {data['what']['error_type']}"))
+    print_formatted_text(HTML(f"✅ Isolated error: {data['what']['description']}"))
+    ```
+    
+    You can choose to:
+    - View the suggested solution
+    - Apply the changes automatically via the file writer agent
+    - Skip and continue debugging manually
+  </Step>
+</Steps>
+
+## Architecture Components
+
+### Core Modules
+
+<Accordion title="module.py - Pipeline Orchestrator">
+  The main entry point that coordinates the entire debugging flow:
+  
+  ```python
+  def main():
+    # Handle relational adjacency list, and feed this to LLM
+    entrypoint: List[str] = ['python3', 'foo.py']
+    flag: str = "-r"
+    traceback, error_info, repopack = relational_error_parsing_function(entrypoint, flag)
+    
+    # LLM now takes the data
+    response: object = process(traceback, error_info, repopack)
+  ```
+  
+  This module connects the error capture, context gathering, and AI processing stages.
+</Accordion>
+
+<Accordion title="relational.py - Error Capture & Context Orchestration">
+  Manages subprocess execution and delegates to utility functions:
+  
+  ```python
+  def relational_error_parsing_function(entrypoint, flag: str = ""):
+    try:
+      subprocess.run(entrypoint, capture_output=True, check=True, text=True)
+      return "", "", ""  # No error
+    except subprocess.CalledProcessError as error:
+      traceback: str = error.stderr if error.stderr else str(error)
+      collected_traceback_files = parse_error_stack(traceback)
+      
+      if flag == '-r':
+        graph = build_adjacency_list(collected_traceback_files, project_root)
+        all_related_files = get_nth_related_files(collected_traceback_files, graph)
+        return traceback, error_information, run_mock_repopack(list(all_related_files))
+      else:
+        return traceback, error_information, run_mock_repopack(collected_traceback_files)
+  ```
+  
+  The function returns three values: traceback string, error info, and packaged file contents.
+</Accordion>
+
+<Accordion title="utils/utils.py - Context Analysis Engine">
+  Contains the heavy lifting for static analysis:
+  
+  - **`parse_error_stack()`** - Extracts file paths from error messages using regex
+  - **`build_adjacency_list()`** - Uses AST parsing to build import dependency graphs
+  - **`get_nth_related_files()`** - Performs breadth-first traversal to find all related files
+  - **`run_mock_repopack()`** - Packages file contents into a single string for the LLM
+  
+  See `utils.py:130-189` for the adjacency list implementation that recursively processes Python imports.
+</Accordion>
+
+<Accordion title="process/process.py - AI Integration Layer">
+  Manages communication with Groq's LLM API:
+  
+  ```python
+  def process(traceback_message: str, original_error_information: str, context: str):
+    client = Groq(api_key=os.getenv("API"))
+    
+    chat_completion = client.chat.completions.create(
+      messages=[...],
+      model="llama3-70b-8192",
+      response_format={"type": "json_object"}
+    )
+    
+    return chat_completion.choices[0].message.content
+  ```
+  
+  The function enforces JSON output format for reliable parsing of error analysis results.
+</Accordion>
+
+### CLI & User Interface
+
+<Accordion title="cli/cli.py - Command Line Interface">
+  Built with Click, provides an interactive shell:
+  
+  ```python
+  class ZapShell(cmd.Cmd):
+    intro = 'Welcome to the Zap CLI. Type help or ? to list commands.'
+    prompt = 'zap> '
+    
+    def do_start(self, arg):
+      """Start up the terminal session using tmux"""
+      self.zapper = Zapper()
+      self.zapper.start()
+      self.term_sesh = TermSesh(session_name='zapper_session')
+  ```
+  
+  The CLI uses tmux for terminal session management and ZMQ for inter-process communication.
+</Accordion>
+
+<Accordion title="terminalout/terminal.py - Output Formatting">
+  Uses prompt_toolkit to create rich terminal UI:
+  
+  ```python
+  def terminalstep1(json_object):
+    data = json.loads(json_object)
+    print_formatted_text(HTML("🔎 <u><b><gray>Details about <red>error</red></gray></b></u>"))
+    print_formatted_text(HTML(f"✅ We found the first instance at <b><magenta>line {data['where']['line_number']}</magenta></b>"))
+  ```
+  
+  Provides keyboard-driven navigation (arrow keys to select Yes/No, Enter to confirm).
+</Accordion>
+
+<Accordion title="agents/file_writer_agent.py - Automated Fix Application">
+  Agent-based architecture for applying code fixes:
+  
+  ```python
+  @file_writer.on_message(model=ErrorCorrectionRequest)
+  async def apply_error_correction(ctx: Context, sender: str, msg: ErrorCorrectionRequest):
+    response = msg.response
+    file_path = os.path.join(response['where']['repository_path'], response['where']['file_name'])
+    line_number = int(response['where']['line_number'])
+    suggested_code = response['how']['suggested_code_solution']
+    
+    with open(file_path, 'r', encoding='utf-8') as file:
+      lines = file.readlines()
+    
+    # Replace the problematic line while preserving indentation
+    if 0 < line_number <= len(lines):
+      stripped_line = lines[line_number - 1].strip()
+      num_whitespace = len(lines[line_number - 1]) - len(stripped_line)
+      lines[line_number - 1] = " " * num_whitespace + suggested_code
+  ```
+  
+  The agent preserves proper indentation and can be called via REST API or message passing.
+</Accordion>
+
+## Data Flow Diagram
+
+```
+┌─────────────────┐
+│  User Command   │
+│ python3 foo.py  │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────────────┐
+│  relational.py          │
+│  - subprocess.run()     │
+│  - Capture stderr       │
+└────────┬────────────────┘
+         │
+         ▼
+┌─────────────────────────┐
+│  utils.py               │
+│  - parse_error_stack()  │
+│  - build_adjacency_list()│ (if -r flag)
+│  - get_nth_related_files()│
+│  - run_mock_repopack()  │
+└────────┬────────────────┘
+         │
+         ▼
+┌─────────────────────────┐
+│  process.py             │
+│  - Groq API call        │
+│  - JSON response        │
+└────────┬────────────────┘
+         │
+         ▼
+┌─────────────────────────┐
+│  terminal.py            │
+│  - Display results      │
+│  - Get user choice      │
+└────────┬────────────────┘
+         │
+         ▼
+┌─────────────────────────┐
+│  file_writer_agent.py   │
+│  - Apply fix            │
+│  - Preserve indentation │
+└─────────────────────────┘
+```
+
+## Key Design Decisions
+
+### Why Subprocess Execution?
+
+Splat runs your code in an isolated subprocess (see `relational.py:15`) rather than importing it directly. This provides:
+- **Safety** - Prevents malicious code from affecting Splat itself
+- **Clean error capture** - All stderr/stdout is captured reliably
+- **Environment isolation** - Your code runs in its own environment
+
+### Why AST Parsing for Imports?
+
+The `build_adjacency_list()` function uses Python's `ast` module (see `utils.py:146-153`) to parse import statements:
+
+```python
+try:
+  with open(file, 'r') as f:
+    content = f.read()
+    tree = ast.parse(content)
+    for node in ast.walk(tree):
+      if isinstance(node, ast.Import):
+        imports.update(alias.name for alias in node.names)
+      elif isinstance(node, ast.ImportFrom) and node.module:
+        imports.add(node.module)
+except SyntaxError:
+  pass  # Handle files with syntax errors gracefully
+```
+
+This approach:
+- Works even with files that have syntax errors
+- Accurately identifies import relationships
+- Enables recursive traversal of dependencies
+
+### Why JSON Response Format?
+
+Splat enforces JSON output from the LLM (`response_format={"type": "json_object"}` in `process.py:37`). This ensures:
+- **Reliable parsing** - No need for complex regex or heuristics
+- **Structured data** - Clear separation of location, description, and fix
+- **Type safety** - Easy validation of response structure
+
+### Why repopack?
+
+The `run_mock_repopack()` function consolidates multiple files into a single string that includes file paths and contents. This format:
+- Provides clear context boundaries to the LLM
+- Reduces token usage compared to sending files separately
+- Makes it easy to include file paths in the context
+
+## Limitations
+
+<Note>
+**Current Constraints:**
+- Splat only supports Python files that can be launched from the root directory
+- The tool focuses on the "most critical" error when multiple errors exist
+- Automatic fixes modify only the specific line mentioned in the error
+</Note>
+
+## Next Steps
+
+- Learn about [Error Analysis](/concepts/error-analysis) to understand how Splat uses AI
+- Explore [Context Gathering](/concepts/context-gathering) to see how the `-r` flag works
+- Check the [API Reference](/reference/api) for integration options

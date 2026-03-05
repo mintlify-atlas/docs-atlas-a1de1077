@@ -1,0 +1,477 @@
+---
+title: 'Troubleshooting'
+description: 'Common issues and solutions when using Splat'
+icon: 'wrench'
+---
+
+## Overview
+
+This guide covers common issues you may encounter when using Splat and provides practical solutions. If you're experiencing problems, check this page first before opening an issue.
+
+## Common Issues
+
+### API Configuration Issues
+
+#### Error: API Key Not Found
+
+**Symptom:**
+```bash
+Error: API key not found or invalid
+```
+
+**Solution:**
+
+<Accordion title="Fix API Key Configuration">
+  1. Verify the environment variable is set:
+     ```bash
+     echo $API
+     ```
+  
+  2. If empty, set the API key:
+     ```bash
+     export API="your_groq_api_key_here"
+     ```
+  
+  3. For persistent configuration, add to your shell profile:
+     ```bash
+     echo 'export API="your_groq_api_key"' >> ~/.bashrc
+     source ~/.bashrc
+     ```
+  
+  4. Alternatively, create a `.env` file in your project root:
+     ```bash
+     echo 'API=your_groq_api_key' > .env
+     ```
+</Accordion>
+
+<Note>
+  The environment variable must be named `API`, not `GROQ_API_KEY` or any other variant. This is hardcoded in `process/process.py:11`.
+</Note>
+
+#### Error: Invalid API Response
+
+**Symptom:**
+```bash
+Groq API returned an error: 401 Unauthorized
+```
+
+**Solution:**
+
+1. Verify your API key is valid and active at [groq.com](https://groq.com/)
+2. Check if your API key has been revoked or expired
+3. Generate a new API key if necessary
+4. Ensure there are no extra spaces or quotes in the API key value
+
+### Installation Issues
+
+#### Error: Command 'splat' Not Found
+
+**Symptom:**
+```bash
+bash: splat: command not found
+```
+
+**Solution:**
+
+<Accordion title="Fix Installation Path">
+  1. Reinstall Splat with pip:
+     ```bash
+     cd /path/to/splat/source
+     pip install -e .
+     ```
+  
+  2. Verify installation:
+     ```bash
+     pip show splat
+     ```
+  
+  3. Check if pip's bin directory is in your PATH:
+     ```bash
+     echo $PATH
+     ```
+  
+  4. Add pip's bin directory to PATH if needed:
+     ```bash
+     export PATH="$HOME/.local/bin:$PATH"
+     ```
+  
+  5. For system-wide installation, use:
+     ```bash
+     sudo pip install -e .
+     ```
+</Accordion>
+
+#### Error: Missing Dependencies
+
+**Symptom:**
+```bash
+ModuleNotFoundError: No module named 'groq'
+```
+
+**Solution:**
+
+```bash
+# Install all required dependencies
+pip install -r requirements.txt
+
+# Or install missing packages individually
+pip install groq python-dotenv click prompt_toolkit
+```
+
+<Tip>
+  Use a virtual environment to avoid dependency conflicts:
+  ```bash
+  python3 -m venv venv
+  source venv/bin/activate
+  pip install -r requirements.txt
+  ```
+</Tip>
+
+### Runtime Issues
+
+#### Error: No Error Detected
+
+**Symptom:**
+Splat runs but doesn't find any errors to analyze.
+
+**Solution:**
+
+1. Ensure your command actually produces an error:
+   ```bash
+   # Test the command directly first
+   python3 your_script.py
+   ```
+
+2. Splat captures errors from stderr. Verify your program outputs errors correctly.
+
+3. Check that you're passing the command as a string:
+   ```bash
+   # Correct
+   splat squash "python3 main.py"
+   
+   # Incorrect
+   splat squash python3 main.py
+   ```
+
+#### Error: File Path Issues
+
+**Symptom:**
+```bash
+FileNotFoundError: [Errno 2] No such file or directory: 'module.py'
+```
+
+**Solution:**
+
+<Warning>
+  Splat must be run from the root directory of your project. It does not handle sub-module entrypoints well when they don't originate from the root directory.
+</Warning>
+
+1. Always run Splat from your project root:
+   ```bash
+   cd /path/to/project/root
+   splat squash "python3 src/main.py"
+   ```
+
+2. Use absolute paths if needed:
+   ```bash
+   splat squash "python3 /full/path/to/script.py"
+   ```
+
+3. Verify file paths exist before running:
+   ```bash
+   ls src/main.py  # Check file exists
+   splat squash "python3 src/main.py"
+   ```
+
+### Known Bugs
+
+Splat has several known limitations documented in the README:
+
+<Accordion title="Known Bug #1: Code Formatting Not Preserved">
+  **Issue:**
+  Splat will not conform to any formatting configurations when inserting code fixes.
+  
+  **Impact:**
+  When Splat automatically applies code changes, the formatting may not match your project's style (e.g., Black, autopep8, or custom formatting rules).
+  
+  **Workaround:**
+  1. Review Splat's suggested changes before applying
+  2. Run your formatter after Splat makes changes:
+     ```bash
+     splat squash -r "python3 main.py"
+     black .  # Reformat with Black
+     ```
+  
+  3. Manually adjust formatting if needed
+  
+  **Status:**
+  This is a known issue. Future versions may integrate with popular formatters.
+</Accordion>
+
+<Accordion title="Known Bug #2: Sub-module Entrypoint Issues">
+  **Issue:**
+  Splat does not handle sub-module entrypoints well when they don't originate from the root directory.
+  
+  **Example Problem:**
+  ```bash
+  # This may fail or produce incorrect results
+  cd src/submodule
+  splat squash "python3 script.py"
+  ```
+  
+  **Impact:**
+  - File path resolution may fail
+  - Import relationships may not be detected correctly
+  - Context gathering with `-r` flag may be incomplete
+  
+  **Workaround:**
+  Always run Splat from the project root:
+  ```bash
+  # Run from root instead
+  cd /path/to/project/root
+  splat squash "python3 src/submodule/script.py"
+  ```
+  
+  **Status:**
+  This is a known architectural limitation. Improvements are planned for future releases.
+</Accordion>
+
+### Context Gathering Issues
+
+#### Error: Incomplete Context with -r Flag
+
+**Symptom:**
+The `-r` flag doesn't seem to gather all related files.
+
+**Solution:**
+
+1. Ensure imports are resolvable from the project root
+2. Check that related files are not in `.gitignore` (Splat respects gitignore)
+3. Verify file paths in error traceback are absolute or relative to project root
+
+<Note>
+  The `-r` flag uses AST parsing to build a dependency graph. Relative imports and non-standard import patterns may not be detected correctly.
+</Note>
+
+#### Error: Sensitive Files Included
+
+**Symptom:**
+Worried that API keys or secrets might be sent to the AI service.
+
+**Solution:**
+
+<Tip>
+  Splat is Git Aware and automatically respects your `.gitignore` files. Add sensitive files to `.gitignore` to exclude them:
+</Tip>
+
+```bash
+# .gitignore
+.env
+*.key
+*.pem
+credentials.json
+secrets/
+config/production.json
+```
+
+Splat will never include gitignored files in the context sent to the AI service.
+
+### Performance Issues
+
+#### Error: Slow Response Times
+
+**Symptom:**
+Splat takes a long time to generate responses.
+
+**Solution:**
+
+1. **Network issues**: Check your internet connection to Groq's API
+2. **Large context**: Using `-r` with many dependencies can be slow
+   ```bash
+   # Try without -r flag first
+   splat squash "python3 main.py"
+   ```
+3. **API rate limits**: Check if you're hitting Groq API rate limits
+4. **Model latency**: Groq is typically very fast; persistent slowness may indicate API issues
+
+<Accordion title="Optimize Performance">
+  - Use `-r` flag only when necessary for complex errors
+  - Ensure `.gitignore` excludes large binary files
+  - Check Groq service status if all requests are slow
+  - Consider upgrading your Groq API plan for higher rate limits
+</Accordion>
+
+### Integration Issues
+
+#### Error: Terminal Output Not Displaying Correctly
+
+**Symptom:**
+Formatted output with colors and prompts appears garbled.
+
+**Solution:**
+
+1. Ensure your terminal supports ANSI colors:
+   ```bash
+   echo $TERM  # Should be xterm-256color or similar
+   ```
+
+2. Update prompt_toolkit if needed:
+   ```bash
+   pip install --upgrade prompt_toolkit
+   ```
+
+3. Try a different terminal emulator (iTerm2, Windows Terminal, etc.)
+
+#### Error: JSON Parsing Failures
+
+**Symptom:**
+```bash
+JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+```
+
+**Solution:**
+
+This usually indicates the AI model didn't return valid JSON:
+
+1. Check API connectivity and response format
+2. Verify your API key has proper permissions
+3. Ensure the Groq API is functioning normally
+4. Try the command again (may be a transient API issue)
+
+<Note>
+  Splat uses `response_format={"type": "json_object"}` to enforce JSON responses from the Groq API. If you see this error, it may indicate an API service issue.
+</Note>
+
+## Debugging Splat Itself
+
+If you need to debug Splat's behavior:
+
+### Enable Verbose Logging
+
+Modify `errortrace.py:9` to enable debug logging:
+
+```python
+import logging
+logging.basicConfig(level=logging.DEBUG)  # Change from ERROR to DEBUG
+```
+
+### Inspect API Requests
+
+Add debug prints in `process/process.py` to see what's being sent:
+
+```python
+def process(traceback_message: str, original_error_information: str, context: str) -> object:
+    print(f"DEBUG: Traceback length: {len(traceback_message)}")
+    print(f"DEBUG: Context length: {len(context)}")
+    # ... rest of function
+```
+
+### Test Individual Components
+
+Test components separately:
+
+```bash
+# Test error parsing
+python3 -c "from utils.utils import parse_error_stack; print(parse_error_stack('File \"test.py\", line 5'))"
+
+# Test context gathering
+python3 -c "from relational import relational_error_parsing_function; print(relational_error_parsing_function(['python3', 'test.py']))"
+```
+
+## Getting Help
+
+### Check Documentation
+
+- [Configuration Guide](/advanced/configuration) - Environment and API setup
+- [Quickstart Guide](/quickstart) - Basic usage examples
+- [How Splat Works](/concepts/how-it-works) - Understanding the architecture
+
+### Collect Diagnostic Information
+
+When reporting issues, include:
+
+```bash
+# System information
+python3 --version
+pip show splat
+echo $API | sed 's/.*/[REDACTED]/'  # Don't share actual API key
+
+# Error details
+splat squash "python3 test.py" 2>&1 | tee debug.log
+```
+
+### Report Issues
+
+If you've exhausted troubleshooting options:
+
+1. Check [GitHub Issues](https://github.com/yourusername/splat/issues) for similar problems
+2. Create a new issue with:
+   - Splat version and Python version
+   - Full command you're running
+   - Complete error message
+   - Expected vs. actual behavior
+   - Diagnostic information (without sensitive data)
+
+<Warning>
+  Never share API keys, credentials, or sensitive code in issue reports. Redact all sensitive information before posting.
+</Warning>
+
+## Prevention Best Practices
+
+Avoid common issues by following these practices:
+
+1. **Always run from project root**: Prevents path resolution issues
+2. **Keep .gitignore updated**: Protects sensitive data and reduces context size
+3. **Use virtual environments**: Prevents dependency conflicts
+4. **Test commands independently first**: Verify your script actually errors before using Splat
+5. **Start without -r flag**: Use basic mode first, add `-r` only if needed
+6. **Keep dependencies updated**: Run `pip install --upgrade -r requirements.txt` periodically
+7. **Monitor API usage**: Watch your Groq API quota to avoid rate limiting
+
+## Quick Reference
+
+### Diagnostic Commands
+
+```bash
+# Check installation
+which splat
+pip show splat
+
+# Verify environment
+echo $API | sed 's/.*/[CONFIGURED]/'
+python3 --version
+
+# Test dependencies
+python3 -c "import groq; import click; import prompt_toolkit; print('All imports OK')"
+
+# Validate project structure
+ls -la .gitignore .env
+pwd  # Should be project root
+
+# Test Splat
+splat --help
+```
+
+### Common Fixes
+
+| Issue | Quick Fix |
+|-------|----------|
+| Command not found | `pip install -e .` from source directory |
+| API key missing | `export API="your_key"` |
+| Import errors | `pip install -r requirements.txt` |
+| Wrong directory | `cd` to project root |
+| Formatting issues | Run `black .` after Splat changes |
+| Slow performance | Remove `-r` flag or check API status |
+
+## Still Having Issues?
+
+If this guide doesn't resolve your problem:
+
+1. Review the [Configuration Guide](/advanced/configuration) for setup details
+2. Check the [source code](https://github.com/yourusername/splat) for implementation details
+3. Join the community discussion (if available)
+4. Open an issue with detailed diagnostic information
+
+<Tip>
+  Most issues are related to API configuration or running Splat from the wrong directory. Double-check these first!
+</Tip>

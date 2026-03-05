@@ -1,80 +1,393 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quick Start"
+description: "Debug your first error with Splat in under 60 seconds"
 ---
 
-## Get started in three steps
+## Your First Debug Session
 
-Get your documentation site running locally and make your first customization.
+Let's walk through using Splat to debug a real Python error. This guide assumes you've already [installed Splat](/installation).
 
-### Step 1: Set up your local environment
+## Basic Usage
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+Splat's primary command is `splat squash` followed by your normal run command:
 
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+```bash
+splat squash "python3 your_script.py"
+```
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+Use the same command you'd normally use to run your code, but wrap it in `splat squash`.
+</Note>
+
+## Example: Simple Syntax Error
+
+Let's create a file with a common error and see how Splat fixes it.
+
+<Steps>
+  <Step title="Create a test file">
+    Create a file called `test.py` with a syntax error:
+    
+    ```python test.py
+    def greet(name):
+        print("Hello, " + name
+    
+    greet("World")
+    ```
+    
+    Notice the missing closing parenthesis on line 2.
+  </Step>
+  
+  <Step title="Run Splat">
+    Execute Splat with your test file:
+    
+    ```bash
+    splat squash "python3 test.py"
+    ```
+  </Step>
+  
+  <Step title="Review the output">
+    Splat will analyze the error and return structured information:
+    
+    ```json
+    {
+      "where": {
+        "repository_path": "/Users/yourname/projects/myproject",
+        "file_name": "test.py",
+        "line_number": "2"
+      },
+      "what": {
+        "error_type": "SyntaxError",
+        "description": "Opening parenthesis in print statement was never closed"
+      },
+      "how": {
+        "error_origination": "2",
+        "suggested_code_solution": "    print(\"Hello, \" + name)\n"
+      }
+    }
+    ```
+    
+    <Tip>
+    Splat tells you exactly:
+    - **Where**: Which file and line number
+    - **What**: The type and description of the error  
+    - **How**: The exact code to fix it
+    </Tip>
+  </Step>
+</Steps>
+
+## Deep Context with `-r` Flag
+
+For more complex errors involving multiple files, use the `-r` (relational) flag to gather deep context.
+
+### How `-r` Works
+
+The `-r` flag enables relational context analysis:
+
+<Accordion title="Technical Details: Relational Analysis">
+  When you use `-r`, Splat:
+  
+  1. **Parses error stack**: Extracts all files mentioned in the traceback
+     ```python
+     # From relational.py:21
+     collected_traceback_files = parse_error_stack(traceback)
+     ```
+  
+  2. **Builds dependency graph**: Creates an adjacency list of all imports
+     ```python
+     # From relational.py:26
+     graph = build_adjacency_list(collected_traceback_files, project_root)
+     ```
+  
+  3. **Finds related files**: Recursively walks the graph to find all Nth-degree connections
+     ```python
+     # From relational.py:27-28
+     all_related_files = get_nth_related_files(collected_traceback_files, graph)
+     return traceback, error_information, run_mock_repopack(list(all_related_files))
+     ```
+  
+  This provides the AI with complete context about your codebase structure.
+</Accordion>
+
+### Example: Multi-File Error
+
+Create a project with multiple related files:
+
+```python main.py
+from utils import calculate
+
+result = calculate(10, 0)
+print(f"Result: {result}")
+```
+
+```python utils.py  
+def calculate(a, b):
+    return a / b  # Division by zero error
+```
+
+Run Splat with relational analysis:
+
+```bash
+splat squash -r "python3 main.py"
+```
+
+Splat will:
+- Detect the error in `utils.py`
+- Understand it was called from `main.py`  
+- Provide context about both files
+- Suggest a fix with error handling
+
+<CodeGroup>
+```json Splat Response
+{
+  "where": {
+    "repository_path": "/path/to/project",
+    "file_name": "utils.py",
+    "line_number": "2"
+  },
+  "what": {
+    "error_type": "ZeroDivisionError",
+    "description": "Division by zero in calculate function"
+  },
+  "how": {
+    "error_origination": "2",
+    "suggested_code_solution": "    if b == 0:\n        raise ValueError('Cannot divide by zero')\n    return a / b\n"
+  }
+}
+```
+
+```bash Terminal Output
+$ splat squash -r "python3 main.py"
+
+🔍 Analyzing error...
+📁 Building dependency graph...
+🔗 Found 2 related files
+🤖 Querying AI...
+
+✅ Error identified:
+   File: utils.py:2
+   Type: ZeroDivisionError
+   Fix: Add zero division check
+
+💡 Suggested solution ready!
+```
+</CodeGroup>
+
+## Understanding the Flags
+
+<Accordion title="No Flag: Basic Mode">
+  Without any flags, Splat analyzes only the files mentioned in the error stack:
+  
+  ```bash
+  splat squash "python3 app.py"
+  ```
+  
+  **Best for**: Simple errors in single files or when you want fast results.
+  
+  ```python
+  # From relational.py:30
+  return traceback, error_information, run_mock_repopack(collected_traceback_files)
+  ```
+</Accordion>
+
+<Accordion title="-r Flag: Relational Mode">
+  With `-r`, Splat performs deep context analysis:
+  
+  ```bash
+  splat squash -r "python3 app.py"
+  ```
+  
+  **Best for**: Complex errors, import issues, or when you need comprehensive analysis.
+  
+  ```python
+  # From relational.py:25-28
+  if flag == '-r':
+    graph = build_adjacency_list(collected_traceback_files, project_root)
+    all_related_files = get_nth_related_files(collected_traceback_files, graph)
+    return traceback, error_information, run_mock_repopack(list(all_related_files))
+  ```
+</Accordion>
+
+## Common Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Syntax Errors" icon="code">
+    ```bash
+    splat squash "python3 script.py"
+    ```
+    Quick fixes for typos, missing brackets, and syntax issues.
+  </Card>
+  
+  <Card title="Import Errors" icon="diagram-project">
+    ```bash
+    splat squash -r "python3 app.py"
+    ```
+    Analyze module relationships to fix import problems.
+  </Card>
+  
+  <Card title="Runtime Errors" icon="circle-exclamation">
+    ```bash
+    splat squash "python3 main.py"
+    ```
+    Debug TypeError, ValueError, AttributeError, etc.
+  </Card>
+  
+  <Card title="Logic Errors" icon="bug">
+    ```bash
+    splat squash -r "python3 test.py"
+    ```
+    Get context-aware suggestions for logical issues.
+  </Card>
+</CardGroup>
+
+## Command Structure
+
+The general format for Splat commands:
+
+```bash
+splat squash <?-r> <!entrypoint>
+```
+
+- `squash`: The debug command
+- `-r`: Optional flag for relational analysis
+- `entrypoint`: Your normal run command (required)
+
+### Valid Examples
+
+<CodeGroup>
+```bash Python Scripts
+# Basic
+splat squash "python3 app.py"
+
+# With arguments
+splat squash "python3 script.py --verbose"
+
+# Relational mode
+splat squash -r "python3 main.py"
+```
+
+```bash Python Modules
+# Run module
+splat squash "python3 -m mymodule"
+
+# With relational analysis
+splat squash -r "python3 -m mypackage.main"
+```
+
+```bash Other Commands
+# pytest
+splat squash "pytest tests/"
+
+# Django
+splat squash -r "python3 manage.py runserver"
+```
+</CodeGroup>
+
+## Tips for Best Results
+
+<Tip>
+**Use `-r` when:**
+- Error involves multiple files
+- You have import or module errors
+- The error context isn't obvious
+- You want comprehensive analysis
+</Tip>
+
+<Tip>
+**Skip `-r` when:**
+- Simple syntax errors
+- Single-file scripts
+- You need quick results
+- Error is already clear
+</Tip>
+
+<Warning>
+**Current Limitations:**
+- Splat works best when running from the project root directory
+- Sub-module entrypoints may not work correctly if not in root
+- Code fixes won't match your formatting configuration (use a formatter after)
+</Warning>
+
+## What Happens Behind the Scenes
+
+When you run `splat squash`, here's what happens:
+
+<Steps>
+  <Step title="Execution & Capture">
+    Splat runs your command in a subprocess and captures the error:
+    
+    ```python
+    # From relational.py:14-19
+    try:
+      subprocess.run(entrypoint, capture_output=True, check=True, text=True)
+    except subprocess.CalledProcessError as error:
+      traceback: str = error.stderr if error.stderr else str(error)
+      error_information: str = str(error)
+    ```
+  </Step>
+  
+  <Step title="Context Collection">
+    Parses the traceback to find involved files:
+    
+    ```python
+    # From utils/utils.py:47-74
+    def parse_error_stack(error_info: str) -> List[str]:
+      files = []
+      file_pattern = re.compile(r'(?:File "([^"]+)"|(\S+\.py)\b)')
+      for line in error_info.split('\n'):
+        matches = file_pattern.findall(line)
+        # Extract and validate file paths
+      return list(dict.fromkeys(files))
+    ```
+  </Step>
+  
+  <Step title="AI Analysis">
+    Sends context to Groq's LLM for analysis:
+    
+    ```python
+    # From process/process.py:13-38  
+    chat_completion = client.chat.completions.create(
+      messages=[...],
+      model="llama3-70b-8192",
+      response_format={"type": "json_object"}
+    )
+    ```
+  </Step>
+  
+  <Step title="Response">
+    Returns structured JSON with error location, explanation, and fix.
+  </Step>
+</Steps>
+
+## Next Steps
+
+Now that you know the basics:
+
+<CardGroup cols={2}>
+  <Card title="Advanced Usage" icon="graduation-cap">
+    Learn advanced debugging techniques and workflows
+  </Card>
+  
+  <Card title="API Reference" icon="book">
+    Explore Splat's Python API for programmatic usage
+  </Card>
+  
+  <Card title="Examples" icon="lightbulb">
+    See real-world debugging scenarios
+  </Card>
+  
+  <Card title="Troubleshooting" icon="wrench">
+    Common issues and solutions
+  </Card>
+</CardGroup>
+
+## Get Help
+
+Having issues? Check out:
+
+- **GitHub Issues**: Report bugs or request features
+- **Documentation**: Full reference guides
+- **Community**: Join discussions with other users
+
+<Note>
+Remember: Splat respects your `.gitignore` and never sends sensitive files to the AI.
 </Note>

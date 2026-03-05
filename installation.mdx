@@ -1,0 +1,263 @@
+---
+title: "Installation"
+description: "Install Splat on macOS, Linux, or Windows"
+---
+
+## Prerequisites
+
+Before installing Splat, ensure you have the following:
+
+<Steps>
+  <Step title="Python 3.7+">
+    Splat requires Python 3.7 or higher.
+    
+    ```bash
+    python3 --version
+    ```
+    
+    If you need to install Python, download it from [python.org](https://python.org).
+  </Step>
+  
+  <Step title="pip">
+    Python's package manager should be installed with Python.
+    
+    ```bash
+    pip --version
+    ```
+  </Step>
+  
+  <Step title="Groq API Key">
+    Splat uses Groq for AI inference. Get your free API key at [groq.com](https://groq.com).
+  </Step>
+</Steps>
+
+## Installation Methods
+
+<Tabs>
+  <Tab title="From Source (Recommended)">
+    
+### Clone the Repository
+
+```bash
+git clone https://github.com/yourusername/splat.git
+cd splat
+```
+
+### Create Virtual Environment
+
+<Tip>
+Using a virtual environment keeps Splat's dependencies isolated from your system Python.
+</Tip>
+
+```bash
+python3 -m venv splatenv
+source splatenv/bin/activate  # On Windows: splatenv\Scripts\activate
+```
+
+### Install Dependencies
+
+Splat requires several Python packages:
+
+```bash
+pip install -r requirements.txt
+```
+
+The key dependencies include:
+
+```txt requirements.txt
+click              # CLI framework
+repopack          # Code context extraction  
+setuptools        # Package management
+virtualenv        # Virtual environment support
+groq              # AI inference
+fastapi           # API framework
+uvicorn           # ASGI server
+python-dotenv     # Environment variable management
+prompt_toolkit    # Interactive CLI
+requests          # HTTP client
+black             # Code formatting
+pydantic_ai       # AI agent framework
+pydantic          # Data validation
+zmq               # Messaging
+```
+
+### Install Splat
+
+Install Splat as a command-line tool:
+
+```bash
+pip install -e .
+```
+
+This installs Splat in editable mode, making the `splat` command available globally.
+
+  </Tab>
+  
+  <Tab title="Quick Setup Script (macOS)">
+    
+For macOS users, use the automated setup script:
+
+```bash setup.sh
+set -e
+echo "🚀 Running some setup commands..."
+
+echo "Installing tmux!"
+brew install tmux
+
+echo "Creating virtual environment..."
+python3 -m venv zapenv
+
+echo "Downloading dependencies..."
+pip install -r requirements.txt
+
+echo "Installing repomix..."
+npm install -g repomix
+
+echo "Setup complete!"
+```
+
+Run the setup:
+
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+<Note>
+This script requires Homebrew for tmux and npm for repomix.
+</Note>
+
+  </Tab>
+</Tabs>
+
+## Configuration
+
+### Set Up Environment Variables
+
+Splat requires a Groq API key to function. Create a `.env` file in your project root:
+
+```bash
+touch .env
+```
+
+Add your Groq API key:
+
+```bash .env
+API=your_groq_api_key_here
+```
+
+<Warning>
+Never commit your `.env` file to version control. Add it to `.gitignore`:
+
+```bash
+echo ".env" >> .gitignore
+```
+</Warning>
+
+### Verify Installation
+
+Check that Splat is installed correctly:
+
+```bash
+splat --version
+```
+
+You should see output similar to:
+
+```
+Splat CLI v0.1.0
+```
+
+<Accordion title="Troubleshooting: Command Not Found">
+  If you get a "command not found" error:
+  
+  1. **Verify installation**: Run `pip list | grep splat` to confirm installation
+  2. **Check PATH**: Ensure your Python scripts directory is in PATH
+     ```bash
+     echo $PATH | grep -o "[^:]*Python[^:]*"
+     ```
+  3. **Activate virtual environment**: Make sure your virtual environment is active
+     ```bash
+     source splatenv/bin/activate
+     ```
+  4. **Reinstall**: Try reinstalling with:
+     ```bash
+     pip uninstall splat
+     pip install -e .
+     ```
+</Accordion>
+
+## Optional: Install Repomix
+
+For enhanced context collection, install repomix globally:
+
+```bash
+npm install -g repomix
+```
+
+Repomix helps Splat gather comprehensive file context for analysis.
+
+## System Requirements
+
+<CardGroup cols={2}>
+  <Card title="macOS" icon="apple">
+    - macOS 10.15 (Catalina) or later
+    - Python 3.7+
+    - 4GB RAM minimum
+  </Card>
+  
+  <Card title="Linux" icon="linux">
+    - Any modern distribution
+    - Python 3.7+
+    - 4GB RAM minimum
+  </Card>
+  
+  <Card title="Windows" icon="windows">
+    - Windows 10 or later
+    - Python 3.7+
+    - 4GB RAM minimum
+    - WSL recommended
+  </Card>
+  
+  <Card title="Network" icon="wifi">
+    - Internet connection required
+    - Groq API access
+    - Outbound HTTPS (port 443)
+  </Card>
+</CardGroup>
+
+## Updating Splat
+
+To update to the latest version:
+
+<CodeGroup>
+```bash From Source
+cd splat
+git pull origin main
+pip install -e . --upgrade
+```
+
+```bash Reinstall Dependencies
+pip install -r requirements.txt --upgrade
+```
+</CodeGroup>
+
+## Uninstalling
+
+To remove Splat from your system:
+
+```bash
+pip uninstall splat
+```
+
+To also remove the virtual environment:
+
+```bash
+rm -rf splatenv  # or zapenv, depending on which you created
+```
+
+## Next Steps
+
+<Card title="Quick Start Guide" icon="rocket" href="/quickstart">
+  Learn how to use Splat to debug your first error
+</Card>

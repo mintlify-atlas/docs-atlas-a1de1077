@@ -1,0 +1,602 @@
+---
+title: 'Context Gathering'
+description: 'How Splat gathers code context using basic mode and relational analysis with the -r flag'
+---
+
+## Overview
+
+Context gathering is Splat's strategy for collecting relevant source code files before sending them to the AI for analysis. The amount and scope of context gathered depends on which mode you use:
+
+- **Basic Mode** (no flags) - Collects only files mentioned in the error traceback
+- **Relational Mode** (`-r` flag) - Recursively collects all files connected via import statements
+
+<Info>
+The `-r` flag uses **AST (Abstract Syntax Tree) parsing** to build a dependency graph and traverse all related files, providing comprehensive context for complex errors.
+</Info>
+
+## Why Context Matters
+
+Large language models need sufficient context to understand errors that span multiple files. Consider this scenario:
+
+```python
+# app.py
+from config import DATABASE_URL  # NameError!
+connect(DATABASE_URL)
+
+# config.py
+DATABASE_ULR = "postgresql://..."  # Typo: ULR instead of URL
+```
+
+The error occurs in `app.py`, but the root cause is in `config.py`. Without seeing both files, the AI might suggest a workaround in `app.py` rather than fixing the typo in `config.py`.
+
+## Basic Mode (Default)
+
+When you run Splat without flags:
+
+```bash
+splat "python3 app.py"
+```
+
+Splat collects only the files explicitly mentioned in the error traceback.
+
+### Error Stack Parsing
+
+The `parse_error_stack()` function extracts file paths from Python tracebacks:
+
+```python
+# From utils/utils.py:47-74
+def parse_error_stack(error_info: str) -> List[str]:
+  """
+  Parse the error stack trace and return a list of all unique file paths involved.
+  
+  Args:
+  error_info (str): The full error stack trace as a string.
+  
+  Returns:
+  List[str]: A list of unique file paths involved in the error(s).
+  """
+  files = []
+  # This regex looks for file paths in various formats
+  file_pattern = re.compile(r'(?:File "([^"]+)"|\b(\S+\.py)\b)')
+  
+  # Process each line of the error_info
+  for line in error_info.split('\n'):
+    matches = file_pattern.findall(line)
+    for match in matches:
+      # The regex returns a tuple for each match
+      file_path = next((m for m in match if m), None)
+      if file_path:
+        file_path = file_path.strip().strip("'\"")
+        if os.path.exists(file_path):
+          files.append(file_path)
+  
+  return list(dict.fromkeys(files))  # Deduplicate while preserving order
+```
+
+<Accordion title="How the Regex Works">
+  The pattern `r'(?:File "([^"]+)"|\b(\S+\.py)\b)'` matches two formats:
+  
+  1. **Standard traceback format:**
+     ```
+     File "/path/to/file.py", line 42, in function_name
+     ```
+     Captured by: `File "([^"]+)"`
+  
+  2. **Inline Python file references:**
+     ```
+     ModuleNotFoundError: No module named 'utils.py'
+     ```
+     Captured by: `\b(\S+\.py)\b`
+  
+  The function then:
+  - Strips quotes and whitespace
+  - Validates that the file exists with `os.path.exists()`
+  - Deduplicates using dictionary keys to preserve order
+</Accordion>
+
+### Example: Basic Mode
+
+Given this error:
+
+```
+Traceback (most recent call last):
+  File "/home/user/project/app.py", line 10, in <module>
+    result = calculate(x, y)
+  File "/home/user/project/utils.py", line 5, in calculate
+    return x / y
+ZeroDivisionError: division by zero
+```
+
+Basic mode collects:
+- ✅ `/home/user/project/app.py` (main file)
+- ✅ `/home/user/project/utils.py` (called function)
+- ❌ Any other files imported by these modules
+
+### Flow in Basic Mode
+
+```python
+# From relational.py:29-30
+else:
+  return traceback, error_information, run_mock_repopack(collected_traceback_files)
+```
+
+The files from `parse_error_stack()` are passed directly to `run_mock_repopack()` without any graph analysis.
+
+## Relational Mode (`-r` Flag)
+
+When you run Splat with the `-r` flag:
+
+```bash
+splat -r "python3 app.py"
+```
+
+Splat builds a complete dependency graph and recursively collects all related files.
+
+### The Relational Pipeline
+
+<Steps>
+  <Step title="Parse error stack">
+    Same as basic mode - extract files from traceback:
+    
+    ```python
+    # From relational.py:21
+    collected_traceback_files = parse_error_stack(traceback)
+    ```
+  </Step>
+
+  <Step title="Build adjacency list">
+    Create a graph of import relationships:
+    
+    ```python
+    # From relational.py:26
+    graph = build_adjacency_list(collected_traceback_files, project_root)
+    ```
+    
+    This produces a dictionary where keys are file paths and values are lists of imported files.
+  </Step>
+
+  <Step title="Get Nth degree connections">
+    Traverse the graph to find all related files:
+    
+    ```python
+    # From relational.py:27
+    all_related_files = get_nth_related_files(collected_traceback_files, graph)
+    ```
+    
+    This performs breadth-first traversal to collect every connected file.
+  </Step>
+
+  <Step title="Package context">
+    Bundle all files into a single string:
+    
+    ```python
+    # From relational.py:28
+    return traceback, error_information, run_mock_repopack(list(all_related_files))
+    ```
+  </Step>
+</Steps>
+
+### Building the Adjacency List
+
+The `build_adjacency_list()` function is the heart of relational mode:
+
+```python
+# From utils/utils.py:130-189
+def build_adjacency_list(files: List[str], project_root: str) -> Dict[str, List[str]]:
+    adjacency_list = {}
+    processed_files = set()
+    
+    def process_file(file: str):
+        if file in processed_files or not is_project_file(file, project_root):
+            return
+        
+        processed_files.add(file)
+        imports = set()
+        tree = None
+        
+        try:
+            with open(file, 'r') as f:
+                content = f.read()
+                try:
+                    tree = ast.parse(content)
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.Import):
+                            imports.update(alias.name for alias in node.names)
+                        elif isinstance(node, ast.ImportFrom) and node.module:
+                            imports.add(node.module)
+                except SyntaxError:
+                    pass  # Handle files with syntax errors gracefully
+        except FileNotFoundError:
+            return
+        
+        adjacency_list[file] = []
+        file_dir = os.path.dirname(file)
+        
+        for imp in imports:
+            module_paths = []
+            if '.' in imp:
+                # Handle package imports like 'utils.helpers'
+                module_paths.append(os.path.join(project_root, *imp.split('.')) + '.py')
+            else:
+                # Try both relative and absolute imports
+                module_paths.extend([
+                    os.path.join(file_dir, f"{imp}.py"),
+                    os.path.join(project_root, f"{imp}.py")
+                ])
+            
+            for module_path in module_paths:
+                if os.path.exists(module_path):
+                    adjacency_list[file].append(module_path)
+                    # Recursively process the imported file
+                    process_file(module_path)
+                    break
+    
+    # Start processing with the initial list of files
+    for file in files:
+        process_file(file)
+    
+    return adjacency_list
+```
+
+<Accordion title="AST Parsing Details">
+  Python's `ast` module parses source code into a tree structure. Splat walks this tree to find import statements:
+  
+  **For `import` statements:**
+  ```python
+  import os
+  import json
+  ```
+  
+  Captured by:
+  ```python
+  if isinstance(node, ast.Import):
+    imports.update(alias.name for alias in node.names)
+  ```
+  
+  **For `from ... import` statements:**
+  ```python
+  from utils import calculate
+  from package.module import function
+  ```
+  
+  Captured by:
+  ```python
+  elif isinstance(node, ast.ImportFrom) and node.module:
+    imports.add(node.module)
+  ```
+  
+  The function only cares about the **module name** (e.g., `utils`), not the specific items imported from it.
+</Accordion>
+
+<Accordion title="Path Resolution Strategy">
+  For each import, Splat tries multiple path resolution strategies:
+  
+  1. **Package imports with dots** (e.g., `utils.helpers`):
+     ```python
+     if '.' in imp:
+       module_paths.append(os.path.join(project_root, *imp.split('.')) + '.py')
+     ```
+     Converts `utils.helpers` → `/project/utils/helpers.py`
+  
+  2. **Relative imports** (same directory as importing file):
+     ```python
+     os.path.join(file_dir, f"{imp}.py")
+     ```
+  
+  3. **Absolute imports** (from project root):
+     ```python
+     os.path.join(project_root, f"{imp}.py")
+     ```
+  
+  The first path that exists is added to the adjacency list.
+</Accordion>
+
+<Accordion title="Recursive Processing">
+  When a valid import is found, it's recursively processed:
+  
+  ```python
+  for module_path in module_paths:
+    if os.path.exists(module_path):
+      adjacency_list[file].append(module_path)
+      # Recursively process the imported file
+      process_file(module_path)
+      break
+  ```
+  
+  This ensures that **all transitive dependencies** are included:
+  - If `app.py` imports `utils.py`
+  - And `utils.py` imports `config.py`
+  - And `config.py` imports `constants.py`
+  - Then all four files are collected
+  
+  The `processed_files` set prevents infinite loops from circular imports.
+</Accordion>
+
+### Traversing Nth Degree Connections
+
+Once the graph is built, `get_nth_related_files()` performs breadth-first traversal:
+
+```python
+# From utils/utils.py:108-122
+def get_nth_related_files(start_files: List[str], graph: Dict[str, List[str]]) -> Set[str]:
+  related_files = set(start_files)
+  planned_visit = list(start_files)
+  possible_files = set()
+  
+  while planned_visit:
+    current = planned_visit.pop(0)  # Dequeue
+    possible_files.add(current)
+    
+    for neighbor in graph.get(current, []):
+      if neighbor not in related_files:
+        related_files.add(neighbor)
+        planned_visit.append(neighbor)  # Enqueue
+  
+  return possible_files
+```
+
+<Accordion title="BFS Algorithm Explanation">
+  This is a classic breadth-first search implementation:
+  
+  1. **Initialize** with error traceback files
+  2. **While queue is not empty:**
+     - Dequeue a file
+     - Add to result set
+     - For each imported file:
+       - If not already visited, add to queue
+  3. **Return** all visited files
+  
+  Example traversal:
+  ```
+  Start: [app.py]
+  
+  Iteration 1:
+    Current: app.py
+    Neighbors: [utils.py, config.py]
+    Queue: [utils.py, config.py]
+    Visited: {app.py}
+  
+  Iteration 2:
+    Current: utils.py
+    Neighbors: [helpers.py]
+    Queue: [config.py, helpers.py]
+    Visited: {app.py, utils.py}
+  
+  Iteration 3:
+    Current: config.py
+    Neighbors: [constants.py]
+    Queue: [helpers.py, constants.py]
+    Visited: {app.py, utils.py, config.py}
+  
+  ... continues until queue is empty
+  ```
+</Accordion>
+
+### Example: Relational Mode
+
+Given this project structure:
+
+```
+project/
+├── app.py         # imports utils, config
+├── utils.py       # imports helpers
+├── config.py      # imports constants
+├── helpers.py     # no imports
+├── constants.py   # no imports
+└── tests.py       # not imported by anything
+```
+
+And this error in `app.py`:
+
+```
+Traceback (most recent call last):
+  File "app.py", line 10, in <module>
+    result = utils.calculate(x)
+  File "utils.py", line 5, in calculate
+    return helpers.process(x)
+AttributeError: module 'helpers' has no attribute 'process'
+```
+
+**Basic mode** would collect:
+- ✅ `app.py`
+- ✅ `utils.py`
+- ❌ `config.py`, `helpers.py`, `constants.py`
+
+**Relational mode** collects:
+- ✅ `app.py` (in traceback)
+- ✅ `utils.py` (in traceback)
+- ✅ `config.py` (imported by app.py)
+- ✅ `helpers.py` (imported by utils.py)
+- ✅ `constants.py` (imported by config.py)
+- ❌ `tests.py` (not connected to error)
+
+## Packaging with repopack
+
+Both modes end by calling `run_mock_repopack()` to package the files:
+
+```python
+# From utils/utils.py:81-100
+def run_mock_repopack(paths: List[str], style: str = 'json') -> str:
+  """
+  A mock function that simulates what repopack might do.
+  It returns a string with file paths and their full content.
+  
+  Args:
+  paths (List[str]): List of file paths to be processed.
+  style (str): Output style (default is 'json', but not used in this mock version).
+  
+  Returns:
+  str: A string representation of the full file contents.
+  """
+  result = []
+  for path in paths:
+    if os.path.exists(path):  # Some paths are hallucinative / not real
+      with open(path, 'r') as f:
+        content = f.read()
+      result.append(f"File: {path}\nContent:\n{content}\n")
+  
+  return "\n" + "="*50 + "\n".join(result) + "="*50 + "\n"
+```
+
+This produces a formatted string like:
+
+```
+==================================================
+File: /home/user/project/app.py
+Content:
+import utils
+import config
+
+result = utils.calculate(42)
+==================================================
+File: /home/user/project/utils.py
+Content:
+import helpers
+
+def calculate(x):
+  return helpers.process(x)
+==================================================
+```
+
+This format provides clear boundaries between files and includes full file paths for the LLM to reference.
+
+## Project Boundary Enforcement
+
+Splat only processes files within your project directory:
+
+```python
+# From utils/utils.py:38-39
+def is_project_file(file_path: str, project_root: str) -> bool:
+  return os.commonpath([file_path, project_root]) == project_root
+```
+
+This prevents including:
+- Standard library modules (e.g., `os`, `json`)
+- Third-party packages from site-packages
+- System files
+
+Only your application code is sent to the LLM.
+
+## Performance Considerations
+
+### Token Usage
+
+Relational mode can dramatically increase token usage:
+
+```
+Basic mode:   2 files × 100 lines = 200 lines ≈ 3,000 tokens
+Relational:   10 files × 100 lines = 1,000 lines ≈ 15,000 tokens
+```
+
+For large projects with many dependencies, you might exceed the LLM's context window (8,192 tokens for llama3-70b-8192).
+
+### File System Operations
+
+Relational mode performs:
+- Multiple file reads for AST parsing
+- Recursive directory traversals
+- Path existence checks
+
+For projects with hundreds of files, this can take a few seconds.
+
+### Circular Import Handling
+
+The `processed_files` set ensures each file is processed only once:
+
+```python
+# From utils/utils.py:135-136
+if file in processed_files or not is_project_file(file, project_root):
+    return
+processed_files.add(file)
+```
+
+This prevents infinite loops when:
+- `a.py` imports `b.py`
+- `b.py` imports `a.py`
+
+## When to Use Each Mode
+
+<Note>
+**Use Basic Mode when:**
+- The error is clearly localized to specific files
+- You want fast analysis
+- Your project has many unrelated modules
+- Token usage is a concern
+
+**Use Relational Mode (`-r`) when:**
+- Errors span multiple interconnected files
+- The root cause might be in imported modules
+- You need comprehensive context
+- Debugging complex import-related issues
+</Note>
+
+## Edge Cases and Limitations
+
+<Accordion title="Syntax errors in source files">
+  Files with syntax errors are still included in context but won't have their imports analyzed:
+  
+  ```python
+  # From utils/utils.py:152-153
+  try:
+    tree = ast.parse(content)
+    # ... analyze imports
+  except SyntaxError:
+    pass  # File included but imports not processed
+  ```
+</Accordion>
+
+<Accordion title="Dynamic imports">
+  Splat only detects static imports visible in the AST. Dynamic imports are not captured:
+  
+  ```python
+  # Detected
+  import utils
+  from config import DATABASE_URL
+  
+  # NOT detected
+  importlib.import_module('utils')
+  __import__('config')
+  ```
+</Accordion>
+
+<Accordion title="Relative imports">
+  Splat handles relative imports by checking both the file's directory and project root:
+  
+  ```python
+  # In project/subdir/file.py
+  from . import sibling      # Detected if sibling.py exists
+  from ..parent import foo   # NOT detected (.. notation not supported)
+  ```
+  
+  Complex relative import notation (e.g., `..`, `...`) is not currently supported.
+</Accordion>
+
+<Accordion title="Non-Python files">
+  Only `.py` files are processed. Other file types are ignored:
+  
+  ```python
+  # From utils/utils.py:59
+  file_pattern = re.compile(r'(?:File "([^"]+)"|\b(\S+\.py)\b)')
+  ```
+  
+  This means imported data files, configs, or other resources won't be included in context.
+</Accordion>
+
+## Debugging Context Gathering
+
+To see what files Splat collects, you can check the output:
+
+```python
+# From utils/utils.py:24-26 (in main() function, not used in production)
+print("************ERROR FILES*************")
+print(error_files)
+print("************ERROR FILES*************")
+```
+
+This debug output (present in the source but not exposed in the CLI) shows the list of files collected from the error stack.
+
+## Next Steps
+
+- Learn how the AI analyzes collected context in [Error Analysis](/concepts/error-analysis)
+- Understand the full system architecture in [How It Works](/concepts/how-it-works)
+- See practical examples in the [Quick Start Guide](/quickstart)

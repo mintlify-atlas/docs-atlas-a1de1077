@@ -1,97 +1,176 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+mode: "custom"
 ---
 
-## Setting up
+<div className="relative overflow-hidden dark:bg-[#0f1117] bg-white">
+  {/* Hero Section */}
+  <div className="relative py-20 px-4 sm:px-6 lg:px-8" style={{background: 'linear-gradient(135deg, #f43c04 0%, #fc9c7a 100%)'}}>
+    <div className="max-w-6xl mx-auto">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+        <div className="lg:col-span-7 space-y-6">
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white">
+            Fix Bugs Instantly with AI
+          </h1>
+          <p className="text-lg sm:text-xl text-white/90 max-w-2xl">
+            Splat combines your compile and runtime errors with deep codebase context to deliver instant, educated debug responses powered by Groq's lightning-fast AI.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <a 
+              href="/quickstart" 
+              className="inline-flex items-center px-6 py-3 text-base font-semibold text-white bg-[#1a1a1a] hover:bg-[#2a2a2a] rounded-lg transition-colors"
+            >
+              Get Started
+            </a>
+            <a 
+              href="/introduction" 
+              className="inline-flex items-center px-6 py-3 text-base font-semibold text-white border border-white/30 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
+            >
+              Learn More
+            </a>
+          </div>
+        </div>
+        <div className="lg:col-span-5 hidden lg:flex items-center justify-center">
+          <div className="text-white/20 text-9xl font-bold">
+            /\_/\<br />
+            ( o.o )<br />
+            &gt; ^ &lt;
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
-Get your documentation site up and running in minutes.
+  {/* Quick Start Section */}
+  <div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+    <div className="space-y-4 mb-8">
+      <h2 className="text-2xl sm:text-3xl font-semibold text-gray-900 dark:text-white">
+        Quick Start
+      </h2>
+      <p className="text-base text-gray-600 dark:text-gray-400">
+        Get up and running with Splat in seconds
+      </p>
+    </div>
+    
+    <Steps>
+      <Step title="Install Splat">
+        Install Splat globally using pip:
+        
+        ```bash
+        pip install splat
+        ```
+      </Step>
+      
+      <Step title="Run your code with Splat">
+        Prefix your command with `splat squash`:
+        
+        ```bash
+        splat squash "python3 your_script.py"
+        ```
+        
+        <Note>
+          Splat automatically captures errors and analyzes them with AI-powered context.
+        </Note>
+      </Step>
+      
+      <Step title="Get instant fixes">
+        Splat analyzes the error, gathers context from your codebase, and returns:
+        - Where the error occurred
+        - What caused it
+        - How to fix it with code suggestions
+        
+        <Tip>
+          Use the `-r` flag for deeper context analysis: `splat squash -r "python3 your_script.py"`
+        </Tip>
+      </Step>
+    </Steps>
+  </div>
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+  {/* Features Section */}
+  <div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+    <div className="space-y-4 mb-8">
+      <h2 className="text-2xl sm:text-3xl font-semibold text-gray-900 dark:text-white">
+        Key Features
+      </h2>
+      <p className="text-base text-gray-600 dark:text-gray-400">
+        Everything you need for lightning-fast debugging
+      </p>
+    </div>
+    
+    <CardGroup cols={2}>
+      <Card title="AI-Optimized" icon="bolt" href="/concepts/error-analysis">
+        Lightning-fast inference with Groq's LLM delivers instant debug responses with exceptional accuracy.
+      </Card>
+      <Card title="Zero Config" icon="rocket" href="/quickstart">
+        Works out-of-the-box globally in any project without configuration or setup.
+      </Card>
+      <Card title="Git Aware" icon="code-branch" href="/concepts/context-gathering">
+        Respects your .gitignore files to protect sensitive information from analysis.
+      </Card>
+      <Card title="Deep Context" icon="sitemap" href="/usage/flags">
+        Use the `-r` flag to analyze related files and dependencies for highly contextual fixes.
+      </Card>
+    </CardGroup>
+  </div>
 
-## Make it yours
+  {/* Explore Documentation */}
+  <div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+    <div className="space-y-4 mb-8">
+      <h2 className="text-2xl sm:text-3xl font-semibold text-gray-900 dark:text-white">
+        Explore the Documentation
+      </h2>
+      <p className="text-base text-gray-600 dark:text-gray-400">
+        Deep dive into Splat's capabilities
+      </p>
+    </div>
+    
+    <CardGroup cols={3}>
+      <Card title="Commands" icon="terminal" href="/usage/commands">
+        Master the Splat CLI commands
+      </Card>
+      <Card title="How It Works" icon="gears" href="/concepts/how-it-works">
+        Understand Splat's architecture
+      </Card>
+      <Card title="Examples" icon="book" href="/usage/examples">
+        Real-world usage examples
+      </Card>
+      <Card title="Configuration" icon="sliders" href="/advanced/configuration">
+        Customize Splat for your workflow
+      </Card>
+      <Card title="API Reference" icon="code" href="/reference/api">
+        Integrate Splat into your tools
+      </Card>
+      <Card title="Troubleshooting" icon="wrench" href="/advanced/troubleshooting">
+        Solve common issues
+      </Card>
+    </CardGroup>
+  </div>
 
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
-  </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
-  </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
-  </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
-
-## Create beautiful pages
-
-Everything you need to create world-class documentation.
-
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
-
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+  {/* CTA Banner */}
+  <div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+    <div className="rounded-2xl p-8 sm:p-12 dark:bg-[#1a1d27] bg-gray-50 border dark:border-[#27272a] border-gray-200">
+      <div className="max-w-3xl mx-auto text-center space-y-4">
+        <h2 className="text-2xl sm:text-3xl font-semibold text-gray-900 dark:text-white">
+          Ready to Debug Faster?
+        </h2>
+        <p className="text-base text-gray-600 dark:text-gray-400">
+          Install Splat and start fixing bugs with AI-powered context analysis
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
+          <a 
+            href="/installation" 
+            className="inline-flex items-center justify-center px-6 py-3 text-base font-semibold text-white rounded-lg transition-colors"
+            style={{backgroundColor: '#f43c04'}}
+          >
+            Install Now
+          </a>
+          <a 
+            href="/usage/examples" 
+            className="inline-flex items-center justify-center px-6 py-3 text-base font-semibold dark:text-white text-gray-900 border dark:border-[#27272a] border-gray-200 dark:bg-[#242838] bg-white hover:dark:bg-[#2d3142] hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            View Examples
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

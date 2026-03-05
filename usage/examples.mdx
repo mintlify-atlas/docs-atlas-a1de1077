@@ -1,0 +1,815 @@
+---
+title: 'Usage Examples'
+description: 'Real-world examples showing how to use Splat for debugging different types of errors'
+icon: 'code'
+---
+
+## Overview
+
+This page provides practical examples of using Splat to debug various types of errors across different scenarios and languages.
+
+## Quick Start Examples
+
+### Simple Python Script
+
+<Tabs>
+  <Tab title="Error Code">
+    ```python foo.py
+    def greet(name):
+        print(f"Hello, {name}"
+    
+    greet("World")
+    ```
+    
+    Missing closing parenthesis on line 2.
+  </Tab>
+  
+  <Tab title="Running Splat">
+    ```bash
+    $ splat squash "python3 foo.py"
+    ```
+    
+    Output:
+    ```
+    🔎 Details about error
+    ✅ We found the first instance of the error at line 2.
+    ✅ The owner of the error: foo.py.
+    ✅ The type of the error: SyntaxError.
+    ✅ Isolated error message: '(' was never closed
+    
+    See suggested change? ... Yes / No
+    ```
+  </Tab>
+  
+  <Tab title="Solution">
+    After selecting "Yes":
+    
+    ```json
+    {
+      "where": {
+        "repository_path": "/home/user/project",
+        "file_name": "foo.py",
+        "line_number": "2"
+      },
+      "what": {
+        "error_type": "SyntaxError",
+        "description": "'(' was never closed on line 2"
+      },
+      "how": {
+        "error_origination": "2",
+        "suggested_code_solution": "print(f\"Hello, {name}\")"
+      }
+    }
+    ```
+    
+    **Fixed code:**
+    ```python
+    print(f"Hello, {name}")
+    ```
+  </Tab>
+</Tabs>
+
+### Multi-File Import Error
+
+<Tabs>
+  <Tab title="Project Structure">
+    ```plaintext
+    myproject/
+    ├── main.py
+    ├── utils.py
+    └── config.py
+    ```
+    
+    ```python main.py
+    from utils import process_data
+    from config import API_KEY
+    
+    def run():
+        result = process_data(API_KEY)
+        print(result)
+    
+    if __name__ == "__main__":
+        run()
+    ```
+    
+    ```python utils.py
+    def process_data(api_key):
+        return api_key.lower()  # Error: API_KEY is None
+    ```
+    
+    ```python config.py
+    API_KEY = None  # Should be a string
+    ```
+  </Tab>
+  
+  <Tab title="Without -r Flag">
+    ```bash
+    $ splat squash "python3 main.py"
+    ```
+    
+    **Context gathered:**
+    - `main.py` (in stack trace)
+    - `utils.py` (in stack trace)
+    
+    **Result:** May not have enough context to understand that `API_KEY` is incorrectly set in `config.py`.
+  </Tab>
+  
+  <Tab title="With -r Flag">
+    ```bash
+    $ splat squash -r "python3 main.py"
+    ```
+    
+    **Context gathered:**
+    - `main.py` (in stack trace)
+    - `utils.py` (in stack trace)
+    - `config.py` (imported by main.py)
+    
+    **Result:** AI can see that `API_KEY = None` in `config.py` and suggest fixing the configuration.
+    
+    ```
+    🔎 Details about error
+    ✅ We found the first instance of the error at line 2.
+    ✅ The owner of the error: utils.py.
+    ✅ The type of the error: AttributeError.
+    ✅ Isolated error message: 'NoneType' object has no attribute 'lower'
+    
+    Suggested fix: Set API_KEY to a string value in config.py
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  For import-related errors, always use the `-r` flag to include all dependencies in the analysis.
+</Tip>
+
+## Language-Specific Examples
+
+### Python
+
+#### Django Application
+
+<CodeGroup>
+```bash Start Django Dev Server
+splat squash -r "python manage.py runserver"
+```
+
+```bash Run Django Management Command
+splat squash -r "python manage.py migrate"
+```
+
+```bash Run Tests
+splat squash -r "python manage.py test"
+```
+</CodeGroup>
+
+<Accordion title="Example: Django Import Error">
+  **Scenario:** Missing import in `views.py`
+  
+  ```python views.py
+  from django.shortcuts import render
+  from .models import Article
+  
+  def article_list(request):
+      articles = Article.objects.all()
+      return render(request, 'articles.html', {'articles': article})  # Typo: 'article' instead of 'articles'
+  ```
+  
+  **Command:**
+  ```bash
+  splat squash -r "python manage.py runserver"
+  ```
+  
+  **Splat Analysis:**
+  ```
+  🔎 Details about error
+  ✅ We found the first instance of the error at line 6.
+  ✅ The owner of the error: views.py.
+  ✅ The type of the error: NameError.
+  ✅ Isolated error message: name 'article' is not defined
+  
+  Suggested fix: Change 'article' to 'articles' in the context dictionary
+  ```
+</Accordion>
+
+#### Flask Application
+
+<CodeGroup>
+```bash Development Server
+splat squash -r "flask run"
+```
+
+```bash With Environment Variables
+FLASK_APP=app.py splat squash -r "flask run"
+```
+
+```bash Production Server
+splat squash -r "gunicorn app:app"
+```
+</CodeGroup>
+
+#### FastAPI Application
+
+```bash
+splat squash -r "uvicorn main:app --reload"
+```
+
+<Accordion title="Example: FastAPI Type Error">
+  **Scenario:** Invalid request model
+  
+  ```python main.py
+  from fastapi import FastAPI
+  from pydantic import BaseModel
+  
+  app = FastAPI()
+  
+  class User(BaseModel):
+      name: str
+      age: int
+  
+  @app.post("/users/")
+  def create_user(user: User):
+      return {"message": f"Created user {user.name} aged {user.age}"}
+  
+  # Test with invalid data
+  create_user({"name": "John", "age": "thirty"})  # String instead of int
+  ```
+  
+  **Command:**
+  ```bash
+  splat squash -r "python3 main.py"
+  ```
+  
+  **Splat Analysis:**
+  Identifies the type mismatch and suggests validating input or converting the age field.
+</Accordion>
+
+### JavaScript / TypeScript
+
+#### Node.js Application
+
+<CodeGroup>
+```bash Basic Node App
+splat squash "node app.js"
+```
+
+```bash With ES Modules
+splat squash "node --experimental-modules index.mjs"
+```
+
+```bash TypeScript
+splat squash "ts-node src/index.ts"
+```
+</CodeGroup>
+
+#### React Application
+
+<CodeGroup>
+```bash Create React App
+splat squash -r "npm start"
+```
+
+```bash With Yarn
+splat squash -r "yarn start"
+```
+
+```bash Production Build
+splat squash -r "npm run build"
+```
+</CodeGroup>
+
+#### Next.js Application
+
+```bash
+splat squash -r "npm run dev"
+```
+
+<Accordion title="Example: Next.js API Route Error">
+  **Scenario:** Incorrect API route handler
+  
+  ```javascript pages/api/users.js
+  export default function handler(req, res) {
+      if (req.method === 'GET') {
+          res.status(200).json({ users: getUsers() })
+      }
+      // Missing return statement causes headers already sent error
+      res.status(405).json({ error: 'Method not allowed' })
+  }
+  ```
+  
+  **Command:**
+  ```bash
+  splat squash -r "npm run dev"
+  ```
+  
+  **Splat Analysis:**
+  Identifies missing `return` or `else` statement causing duplicate responses.
+</Accordion>
+
+### Go
+
+<CodeGroup>
+```bash Single File
+splat squash "go run main.go"
+```
+
+```bash Package with Multiple Files
+splat squash -r "go run ."
+```
+
+```bash Specific Binary
+splat squash -r "go run cmd/server/main.go"
+```
+</CodeGroup>
+
+<Accordion title="Example: Go Nil Pointer Error">
+  **Scenario:** Dereferencing nil pointer
+  
+  ```go main.go
+  package main
+  
+  import "fmt"
+  
+  type User struct {
+      Name string
+      Age  int
+  }
+  
+  func main() {
+      var user *User
+      fmt.Println(user.Name)  // Panic: nil pointer dereference
+  }
+  ```
+  
+  **Command:**
+  ```bash
+  splat squash "go run main.go"
+  ```
+  
+  **Splat Analysis:**
+  ```
+  🔎 Details about error
+  ✅ We found the first instance of the error at line 11.
+  ✅ The owner of the error: main.go.
+  ✅ The type of the error: panic: runtime error.
+  ✅ Isolated error message: invalid memory address or nil pointer dereference
+  
+  Suggested fix: Initialize the user pointer before accessing its fields
+  ```
+</Accordion>
+
+### Rust
+
+<CodeGroup>
+```bash Default Binary
+splat squash "cargo run"
+```
+
+```bash Specific Binary
+splat squash -r "cargo run --bin myapp"
+```
+
+```bash Release Mode
+splat squash -r "cargo run --release"
+```
+</CodeGroup>
+
+## Common Error Scenarios
+
+### Syntax Errors
+
+<Tabs>
+  <Tab title="Missing Parenthesis">
+    ```python
+    # Error
+    print("Hello World"
+    ```
+    
+    ```bash
+    $ splat squash "python3 script.py"
+    ```
+    
+    **Splat identifies:** Missing closing parenthesis  
+    **Suggested fix:** Add `)` at end of line
+  </Tab>
+  
+  <Tab title="Indentation Error">
+    ```python
+    def calculate(x, y):
+    return x + y  # IndentationError
+    ```
+    
+    ```bash
+    $ splat squash "python3 script.py"
+    ```
+    
+    **Splat identifies:** Incorrect indentation  
+    **Suggested fix:** Add proper indentation (4 spaces)
+  </Tab>
+  
+  <Tab title="Unclosed String">
+    ```python
+    message = "Hello World
+    print(message)
+    ```
+    
+    ```bash
+    $ splat squash "python3 script.py"
+    ```
+    
+    **Splat identifies:** Unterminated string literal  
+    **Suggested fix:** Add closing quote
+  </Tab>
+</Tabs>
+
+### Runtime Errors
+
+<Tabs>
+  <Tab title="NameError">
+    ```python script.py
+    def process():
+        result = calculate_value()  # Function not defined
+        return result
+    
+    process()
+    ```
+    
+    ```bash
+    $ splat squash "python3 script.py"
+    ```
+    
+    **Output:**
+    ```
+    ✅ The type of the error: NameError.
+    ✅ Isolated error message: name 'calculate_value' is not defined
+    
+    Suggested fix: Define calculate_value() or import it from another module
+    ```
+  </Tab>
+  
+  <Tab title="TypeError">
+    ```python script.py
+    def add_numbers(a, b):
+        return a + b
+    
+    result = add_numbers(5, "10")  # Can't add int and str
+    ```
+    
+    ```bash
+    $ splat squash "python3 script.py"
+    ```
+    
+    **Output:**
+    ```
+    ✅ The type of the error: TypeError.
+    ✅ Isolated error message: unsupported operand type(s) for +: 'int' and 'str'
+    
+    Suggested fix: Convert string to int: add_numbers(5, int("10"))
+    ```
+  </Tab>
+  
+  <Tab title="AttributeError">
+    ```python script.py
+    class User:
+        def __init__(self, name):
+            self.name = name
+    
+    user = User("Alice")
+    print(user.age)  # Attribute doesn't exist
+    ```
+    
+    ```bash
+    $ splat squash "python3 script.py"
+    ```
+    
+    **Output:**
+    ```
+    ✅ The type of the error: AttributeError.
+    ✅ Isolated error message: 'User' object has no attribute 'age'
+    
+    Suggested fix: Add age attribute in __init__ or use getattr with default
+    ```
+  </Tab>
+</Tabs>
+
+### Import Errors
+
+<Tabs>
+  <Tab title="Module Not Found">
+    ```python app.py
+    from utils import helper_function  # utils.py doesn't exist
+    
+    helper_function()
+    ```
+    
+    ```bash
+    $ splat squash "python3 app.py"
+    ```
+    
+    **Output:**
+    ```
+    ✅ The type of the error: ModuleNotFoundError.
+    ✅ Isolated error message: No module named 'utils'
+    
+    Suggested fix: Create utils.py or check import path
+    ```
+  </Tab>
+  
+  <Tab title="Circular Import">
+    ```python a.py
+    from b import function_b
+    
+    def function_a():
+        return function_b()
+    ```
+    
+    ```python b.py
+    from a import function_a  # Circular dependency
+    
+    def function_b():
+        return function_a()
+    ```
+    
+    ```bash
+    $ splat squash -r "python3 a.py"
+    ```
+    
+    **Output:**
+    ```
+    ✅ The type of the error: ImportError.
+    ✅ Isolated error message: cannot import name 'function_a' from partially initialized module 'a'
+    
+    Suggested fix: Restructure code to avoid circular imports or use late imports
+    ```
+  </Tab>
+</Tabs>
+
+## Advanced Scenarios
+
+### Debugging Complex Frameworks
+
+<Accordion title="Django ORM Query Error">
+  **Scenario:** Complex query causing database error
+  
+  ```python models.py
+  from django.db import models
+  
+  class Article(models.Model):
+      title = models.CharField(max_length=200)
+      published = models.BooleanField(default=False)
+  ```
+  
+  ```python views.py
+  from .models import Article
+  
+  def get_articles():
+      # Error: Invalid field name
+      return Article.objects.filter(publish=True)
+  ```
+  
+  **Command:**
+  ```bash
+  splat squash -r "python manage.py runserver"
+  ```
+  
+  **Analysis:**
+  With `-r` flag, Splat includes both `views.py` and `models.py`, allowing the AI to see that the correct field name is `published`, not `publish`.
+  
+  **Suggested fix:**
+  ```python
+  return Article.objects.filter(published=True)
+  ```
+</Accordion>
+
+<Accordion title="React Component State Error">
+  **Scenario:** Incorrect state update
+  
+  ```jsx Counter.jsx
+  import React, { useState } from 'react';
+  
+  function Counter() {
+    const [count, setCount] = useState(0);
+    
+    const increment = () => {
+      setCount(count + 1);
+      setCount(count + 1);  // Doesn't work as expected
+    };
+    
+    return <button onClick={increment}>{count}</button>;
+  }
+  ```
+  
+  **Command:**
+  ```bash
+  splat squash -r "npm start"
+  ```
+  
+  **Analysis:**
+  Identifies that state updates are batched and suggests using functional update form.
+  
+  **Suggested fix:**
+  ```jsx
+  const increment = () => {
+    setCount(prev => prev + 1);
+    setCount(prev => prev + 1);
+  };
+  ```
+</Accordion>
+
+### Database Connection Errors
+
+<CodeGroup>
+```python PostgreSQL Connection
+from psycopg2 import connect
+
+conn = connect(
+    host="localhost",
+    database="mydb",
+    user="user",
+    password="pass"
+)
+```
+
+```bash Debug Connection Error
+splat squash -r "python3 app.py"
+```
+</CodeGroup>
+
+<Note>
+  Splat respects `.gitignore` and won't include credentials from `.env` files in the context sent to the AI.
+</Note>
+
+### Async/Await Errors
+
+<Tabs>
+  <Tab title="Python AsyncIO">
+    ```python async_app.py
+    import asyncio
+    
+    async def fetch_data():
+        await asyncio.sleep(1)
+        return "data"
+    
+    # Error: Not using await
+    result = fetch_data()
+    print(result)  # Prints coroutine object, not "data"
+    ```
+    
+    ```bash
+    $ splat squash "python3 async_app.py"
+    ```
+    
+    **Splat identifies:** Missing `await` keyword  
+    **Suggested fix:**
+    ```python
+    result = await fetch_data()
+    # Or:
+    result = asyncio.run(fetch_data())
+    ```
+  </Tab>
+  
+  <Tab title="JavaScript Promises">
+    ```javascript app.js
+    function fetchData() {
+        return new Promise(resolve => {
+            setTimeout(() => resolve("data"), 1000);
+        });
+    }
+    
+    // Error: Not awaiting promise
+    const result = fetchData();
+    console.log(result.toUpperCase());  // TypeError
+    ```
+    
+    ```bash
+    $ splat squash "node app.js"
+    ```
+    
+    **Splat identifies:** Missing `await` or `.then()`  
+    **Suggested fix:**
+    ```javascript
+    const result = await fetchData();
+    // Or:
+    fetchData().then(result => console.log(result.toUpperCase()));
+    ```
+  </Tab>
+</Tabs>
+
+## Workflow Tips
+
+### Iterative Debugging
+
+<Steps>
+  <Step title="First Pass - Quick Check">
+    ```bash
+    splat squash "python3 app.py"
+    ```
+    
+    Start without flags for fast analysis of obvious errors.
+  </Step>
+  
+  <Step title="Second Pass - Deep Analysis">
+    ```bash
+    splat squash -r "python3 app.py"
+    ```
+    
+    If the error persists, add `-r` for comprehensive context.
+  </Step>
+  
+  <Step title="Review and Apply">
+    Carefully review the suggested fix before applying changes.  
+    Use the interactive prompt to accept or reject suggestions.
+  </Step>
+  
+  <Step title="Test">
+    ```bash
+    python3 app.py
+    ```
+    
+    Run your application normally to verify the fix works.
+  </Step>
+</Steps>
+
+### Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Always Quote Entrypoints" icon="quotes">
+    ```bash
+    # ✅ Correct
+    splat squash "python3 main.py"
+    
+    # ❌ Incorrect
+    splat squash python3 main.py
+    ```
+  </Card>
+  
+  <Card title="Use -r for Multi-File Projects" icon="diagram-project">
+    ```bash
+    # For frameworks and complex apps
+    splat squash -r "npm start"
+    splat squash -r "python manage.py runserver"
+    ```
+  </Card>
+  
+  <Card title="Check .gitignore" icon="file-shield">
+    Ensure sensitive files are ignored:
+    ```gitignore
+    .env
+    .env.local
+    secrets/
+    *.key
+    ```
+  </Card>
+  
+  <Card title="Run from Project Root" icon="folder-tree">
+    ```bash
+    # Always run from project root
+    cd /path/to/project
+    splat squash "python3 app.py"
+    ```
+  </Card>
+</CardGroup>
+
+<Warning>
+  **Known Limitation:** Splat does not work well with sub-module entrypoints that don't originate in the root directory. Always run from your project root.
+</Warning>
+
+## Error Output Formatting
+
+<Note>
+  Splat uses formatted terminal output with colors and emojis for better readability. If your terminal doesn't support these features, the output will fall back to plain text.
+</Note>
+
+Source: `terminalout/terminal.py:15-19`
+
+## Troubleshooting
+
+### No Error Detected
+
+```bash
+$ splat squash "python3 app.py"
+# (Application runs successfully, no output from Splat)
+```
+
+If your application runs without errors, Splat exits silently. This is expected behavior.
+
+### Too Much Context
+
+If using `-r` includes too many files:
+
+1. Start without `-r` to narrow down the issue
+2. Add more entries to `.gitignore` to exclude unnecessary files
+3. Ensure your project structure is modular
+
+### AI Suggestions Not Helpful
+
+If the AI's suggestions don't address your issue:
+
+- Try adding `-r` flag for more context
+- Check that all relevant files are being included
+- Ensure error messages are clear and complete
+- Consider if the error is in configuration or environment rather than code
+
+## See Also
+
+- [Command Reference](/usage/commands) - Complete command documentation
+- [Flags Reference](/usage/flags) - Detailed flag explanations
